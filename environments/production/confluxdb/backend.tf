@@ -1,9 +1,9 @@
 terraform {
   backend "s3" {
-    bucket         = "confluxdb-tfstate-60cqjkdw"
-    key            = "production/data-platform/terraform.tfstate"
-    region         = "eu-west-3"
-    dynamodb_table = "confluxdb-terraform-state-lock"
+    bucket         = "confluxdb-prod-tfstate"
+    key            = "production/confluxdb/terraform.tfstate"
+    region         = "eu-west-1"
+    dynamodb_table = "aws_dynamodb_table.tflock.confluxdb"
     encrypt        = true
   }
 }
