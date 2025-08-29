@@ -9,6 +9,16 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+
+  default_tags {
+    tags = {
+      Environment     = "Production"
+      Service         = "ConfluxDB"
+      Group           = "N/A"
+      Costumer Facing = "N"
+    }
+  }
+
 }
 
 module "vpc" {
