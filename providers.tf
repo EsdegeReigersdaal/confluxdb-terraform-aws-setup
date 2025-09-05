@@ -1,14 +1,19 @@
 provider "aws" {
-  region = var.aws_region
+  region = local.aws_region
 
   default_tags {
     tags = {
-      "Environment" = "production"
-      "Project"     = "ConfluxDB"
+      "Environment" = local.environment
+      "Project"     = local.project_name
       "ManagedBy"   = "Terraform"
-      "Component"   = "terraform-backend"
-      "Owner"       = "data-platform-team"
-      "CostCenter"  = "confluxdb-prod"
+      "Component"   = component_name
+      "Owner"       = local.owner_name
+      "CostCenter"  = cost_center_name
+      "Terraform" = "true"
     }
   }
+}
+
+data "aws_availability_zones" "available" {
+  state = "available"
 }
