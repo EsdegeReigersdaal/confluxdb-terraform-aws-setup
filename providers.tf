@@ -6,9 +6,9 @@ provider "aws" {
       "Environment" = local.environment
       "Project"     = local.project_name
       "ManagedBy"   = "Terraform"
-      "Component"   = component_name
+      "Component"   = local.component_name
       "Owner"       = local.owner_name
-      "CostCenter"  = cost_center_name
+      "CostCenter"  = local.cost_center_name
       "Terraform" = "true"
     }
   }
