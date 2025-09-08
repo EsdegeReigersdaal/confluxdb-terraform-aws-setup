@@ -9,7 +9,7 @@ provider "aws" {
       "Component"   = local.component_name
       "Owner"       = local.owner_name
       "CostCenter"  = local.cost_center_name
-      "Terraform" = "true"
+      "Terraform"   = "true"
     }
   }
 }
@@ -17,3 +17,5 @@ provider "aws" {
 data "aws_availability_zones" "available" {
   state = "available"
 }
+
+data "aws_caller_identity" "current" {}
