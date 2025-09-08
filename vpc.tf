@@ -10,8 +10,9 @@ module "vpc" {
   public_subnets   = [for k, v in local.availability_zones : cidrsubnet(local.vpc_cidr, 8, k + 4)]
   database_subnets = [for k, v in local.availability_zones : cidrsubnet(local.vpc_cidr, 8, k + 8)]
 
-  private_subnet_names  = ["Private Subnet A", "Private, Subnet B"]
-  database_subnet_names = ["DB Subnet A"]
+  private_subnet_names  = [for az in local.availability_zones : "private-${az}"]
+  public_subnet_names   = [for az in local.availability_zones : "public-${az}"]
+  database_subnet_names = [for az in local.availability_zones : "db-${az}"]
 
   create_database_subnet_group  = false
   manage_default_network_acl    = false
