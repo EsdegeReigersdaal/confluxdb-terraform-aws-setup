@@ -1,19 +1,19 @@
 module "vpc" {
-        source  = "terraform-aws-modules/vpc/aws"
-        version = "6.0.1"
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "6.0.1"
 
-  name            = "${local.project_name}-${local.environment}-vpc"
-  cidr            = local.vpc_cidr
-  azs             = local.availability_zones
+  name = "${local.project_name}-${local.environment}-vpc"
+  cidr = local.vpc_cidr
+  azs  = local.availability_zones
 
-  private_subnets     = [for k, v in local.availability_zones : cidrsubnet(local.vpc_cidr, 8, k)]
-  public_subnets      = [for k, v in local.availability_zones : cidrsubnet(local.vpc_cidr, 8, k + 4)]
-  database_subnets    = [for k, v in local.availability_zones : cidrsubnet(local.vpc_cidr, 8, k + 8)]
+  private_subnets  = [for k, v in local.availability_zones : cidrsubnet(local.vpc_cidr, 8, k)]
+  public_subnets   = [for k, v in local.availability_zones : cidrsubnet(local.vpc_cidr, 8, k + 4)]
+  database_subnets = [for k, v in local.availability_zones : cidrsubnet(local.vpc_cidr, 8, k + 8)]
 
-  private_subnet_names = ["Private Subnet A", "Private, Subnet B"]
+  private_subnet_names  = ["Private Subnet A", "Private, Subnet B"]
   database_subnet_names = ["DB Subnet A"]
 
-create_database_subnet_group  = false
+  create_database_subnet_group  = false
   manage_default_network_acl    = false
   manage_default_route_table    = false
   manage_default_security_group = false
@@ -24,7 +24,7 @@ create_database_subnet_group  = false
   enable_nat_gateway = true
   single_nat_gateway = true
 
-vpc_flow_log_iam_role_name            = "vpc-execution-role"
+  vpc_flow_log_iam_role_name            = "vpc-execution-role"
   vpc_flow_log_iam_role_use_name_prefix = false
   enable_flow_log                       = true
   create_flow_log_cloudwatch_log_group  = true

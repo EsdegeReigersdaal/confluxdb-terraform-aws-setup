@@ -9,7 +9,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 resource "aws_iam_role" "github_actions" {
-  name = "GitHubActionsRole-ConfluxDB"
+  name = "${local.project_name}-${local.environment}-GithubActionsRole"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -34,7 +34,7 @@ resource "aws_iam_role" "github_actions" {
 }
 
 resource "aws_iam_policy" "github_actions_policy" {
-  name        = "GithubActionsPolicy-ConfluxDB"
+  name        = "${local.project_name}-${local.environment}-GithubActionsPolicy"
   description = "Policy for Github Actions to deploy ConfluxDB on ECS."
 
   policy = jsonencode({
