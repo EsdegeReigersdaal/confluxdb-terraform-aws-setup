@@ -16,7 +16,7 @@ module "ecr" {
         rules = [{
           rulePriority = 1,
           description  = "Keep last 30 images",
-          action       = {
+          action = {
             type = "expire"
           },
           selection = {
@@ -41,7 +41,7 @@ module "ecr" {
         rules = [{
           rulePriority = 1,
           description  = "Keep last 30 images",
-          action       = {
+          action = {
             type = "expire"
           },
           selection = {
@@ -66,7 +66,7 @@ module "ecr" {
         rules = [{
           rulePriority = 1,
           description  = "Keep last 30 images",
-          action       = {
+          action = {
             type = "expire"
           },
           selection = {

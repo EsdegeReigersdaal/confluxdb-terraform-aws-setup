@@ -69,7 +69,7 @@ resource "aws_iam_policy" "github_actions_policy" {
       {
         Effect   = "Allow"
         Action   = "iam:PassRole"
-        Resource  = module.ecs.task_execution_role_arn
+        Resource = module.ecs.task_execution_role_arn
         Condition = {
           "StringEquals" = {
             "iam:PassedToService" = "ecs-tasks.amazonaws.com"
@@ -90,7 +90,7 @@ resource "aws_iam_policy" "read_rds_secret" {
   description = "Allows reading the RDS secret from Secrets Manager"
 
   policy = jsonencode({
-    Version   = "2012-10-17"
+    Version = "2012-10-17"
     Statement = [
       {
         Action   = ["secretsmanager:GetSecretValue"]

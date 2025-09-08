@@ -7,7 +7,7 @@ module "ecs" {
   create_cloudwatch_log_group = true
   cloudwatch_log_group_name   = "/ecs/${local.project_name}-${local.environment}"
 
-  create_iam_roles = true
+  create_iam_roles      = true
   task_role_policy_arns = [aws_iam_policy.read_rds_secret.arn]
 
   # ##############################################################################
@@ -38,15 +38,15 @@ module "ecs" {
         }
       }
 
-      desired_count = 1
-      subnet_ids    = module.vpc.private_subnets
+      desired_count      = 1
+      subnet_ids         = module.vpc.private_subnets
       security_group_ids = [module.app_sg.security_group_id]
 
       load_balancer = {
-        create_alb      = true
-        vpc_id          = module.vpc.vpc_id
-        alb_name        = "${local.project_name}-${local.environment}-alb"
-        alb_subnet_ids  = module.vpc.public_subnets
+        create_alb             = true
+        vpc_id                 = module.vpc.vpc_id
+        alb_name               = "${local.project_name}-${local.environment}-alb"
+        alb_subnet_ids         = module.vpc.public_subnets
         alb_security_group_ids = [module.lb_sg.security_group_id]
 
         # Target Group settings
