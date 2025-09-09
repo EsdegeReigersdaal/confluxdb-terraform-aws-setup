@@ -17,37 +17,67 @@ module "rds" {
 
   identifier = "${local.project_name}-${local.environment}-rds"
 
-  engine                = "postgres"
-  engine_version        = "15.6"
-  instance_class        = "db.t4g.small" # Graviton instance for better price/performance
-  allocated_storage     = 20
-  storage_type          = "gp3"
-  max_allocated_storage = 100 # Allows storage to autoscale up to 100 GB
+  engine               = "postgres"
+  engine_version       = "17.5"
+  instance_class       = "db.t4g.micro"
+  allocated_storage    = 20
+  storage_type         = "gp3"
+  max_allocated_storage = 100
 
-  db_name = "dataplatform" # The initial database to be created
+  db_name = "confluxdb"
 
-  manage_master_user_password = true
-  master_username             = "dagsteradmin"
+  username             = "confluxdb_postgresql"
+  port = 5432
 
-  # Networking - Places the database in private subnets and attaches the correct security group.
-  publicly_accessible    = false
+  manage_master_user_password_rotation              = true
+  master_user_password_rotate_immediately           = false
+  master_user_password_rotation_schedule_expression = "rate(15 days)"
+
+
   vpc_security_group_ids = [module.rds_sg.security_group_id]
   db_subnet_group_name   = aws_db_subnet_group.rds.name
 
-  # ##############################################################################
-  # PRODUCTION-SPECIFIC SETTINGS (Defaults are for dev/test)
-  # ##############################################################################
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+  create_cloudwatch_log_group     = true
 
-  # For true production, set multi_az = true for high availability.
-  multi_az = false
-
-  # For production, set a deletion_protection = true and skip_final_snapshot = false
-  deletion_protection     = true
-  skip_final_snapshot     = false
-  backup_retention_period = 7
-
+  multi_az                  = false
+  deletion_protection       = true
+  skip_final_snapshot       = false
+  backup_retention_period   = 7
   performance_insights_enabled = true
 
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  create_monitoring_role                = true
+  monitoring_interval                   = 60
+  monitoring_role_name                  = "${local.project_name}-${local.environment}-monitor-role"
+  monitoring_role_use_name_prefix       = true
+  monitoring_role_description           = "Monitoring role for database"
+
+parameters = [
+    {
+      name  = "autovacuum"
+      value = 1
+    },
+    {
+      name  = "client_encoding"
+      value = "utf8"
+    }
+  ]
+
+  tags = local.tags
+  db_option_group_tags = {
+    "Sensitive" = "low"
+  }
+  db_parameter_group_tags = {
+    "Sensitive" = "low"
+  }
+  cloudwatch_log_group_tags = {
+    "Sensitive" = "high"
+  }
+  
   tags = {
     Project     = local.project_name
     Environment = local.environment
