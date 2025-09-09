@@ -1,3 +1,6 @@
+# -----------------------------------------------------------------------------
+# VPC Endpoints for private ECS/ECR/Logs/Secrets access
+# -----------------------------------------------------------------------------
 module "endpoints" {
   source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
   version = "6.0.1"

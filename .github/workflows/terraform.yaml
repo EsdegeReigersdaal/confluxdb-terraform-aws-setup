@@ -1,0 +1,74 @@
+name: Terraform ConfluxDB Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DAGSTER_AGENT_TOKEN: ${{ secrets.DAGSTER_AGENT_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.IAM_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.0
+
+      - name: Select environment
+        run: |
+          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
+            echo "TF_ENV=prod" >> $GITHUB_ENV
+          else
+            echo "TF_ENV=dev" >> $GITHUB_ENV
+          fi
+
+      - name: Terraform Init
+        run: terraform init -backend-config="environments/${TF_ENV}.backend.hcl" -reconfigure
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -var-file="environments/${TF_ENV}.tfvars" -out=tfplan
+
+      - name: Append plan to job summary
+        if: always()
+        run: terraform show -no-color tfplan >> $GITHUB_STEP_SUMMARY
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Set Dagster agent token in Secrets Manager (post-apply)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.DAGSTER_AGENT_TOKEN != ''
+        run: |
+          aws secretsmanager put-secret-value \
+            --secret-id "confluxdb/${TF_ENV}/dagster_agent_token" \
+            --secret-string "$DAGSTER_AGENT_TOKEN" \
+            --region eu-west-1
+

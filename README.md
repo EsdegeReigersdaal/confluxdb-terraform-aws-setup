@@ -1,92 +1,112 @@
-🛡️ ConfluxDB IaC Blauwdruk
+ConfluxDB on AWS (Terraform)
+=================================
 
-    Het bouwen van een Veilige, Schaalbare en Geautomatiseerde Cloudinfrastructuur met Terraform voor het ConfluxDB Dataplatform.
+Infrastructure-as-Code for the ConfluxDB data platform on AWS. It provisions a secure, private-by-default environment with:
 
-Inhoudsopgave
+- ECS Fargate cluster hosting a Dagster Hybrid agent in private subnets
+- Ephemeral worker task definition for Dagster/Meltano/SQLMesh jobs
+- RDS PostgreSQL (private subnets, managed master user secret)
+- VPC with NAT and VPC Endpoints (ECR, ECS, Logs, Secrets Manager)
+- Security groups with least-privilege rules
+- ECR repositories for agent and worker images
+- IAM roles for execution, agent control, and worker data access
 
-    De Fundamentele Pijlers
+Prerequisites
+-------------
+- Terraform 1.13+
+- AWS provider ~> 6.12
+- AWS credentials with access to the target account
+- S3 bucket for backend state (configured in `backend.tf`)
 
-    De Zero-Trust Netwerkperimeter
+Repository Layout
+-----------------
+- `vpc.tf`: VPC, subnets, NAT, flow logs
+- `security-groups.tf`: SG for app tasks and RDS, VPC endpoint SG
+- `endpoints.tf`: Interface/Gateway endpoints for private AWS access
+- `database.tf`: RDS PostgreSQL in private subnets, managed password
+- `ecr.tf`: ECR repositories for agent and worker images
+- `ecs.tf`: ECS cluster, Dagster agent service, worker task definition
+- `iam.tf`: IAM OIDC (GitHub), ECS execution role, agent/worker roles
+- `secrets.tf`: Secrets Manager secrets (managed by Terraform)
+- `variables.tf`: Configuration knobs (CPU/memory, images, secrets)
+- `environments/sample.tfvars`: Example settings to copy/tune
 
-    De Veilige Data- & Applicatiekern
+Quick Start
+-----------
+1) Initialize and validate
 
-    De Tijdelijke & Veilige Automatisatiemotor
+    terraform init -upgrade
+    terraform validate
 
-    Geïntegreerde Beveiliging & Governance
+2) Configure variables
 
-De Fundamentele Pijlers
+    cp environments/sample.tfvars environments/prod.tfvars
+    # Edit environments/prod.tfvars to set:
+    # - DAGSTER_CLOUD_URL
+    # - image tags (dagster agent and worker)
+    # - managed secrets to create (or leave empty)
 
-    Onze architectuur is gebouwd op ononderhandelbare principes die vanaf dag één een robuuste, veilige en onderhoudbare productieomgeving garanderen.
+3) Plan and apply
 
-🛡️ Veiligheid door Ontwerp
-	
+    terraform plan -var-file=environments/prod.tfvars -out=tfplan
+    terraform apply tfplan
 
-📜 Infrastructuur als Code
-	
+4) Set secret values (if not set in tfvars)
+   To avoid storing sensitive values in Terraform state, set them post-apply:
 
-🤖 Operationele Automatisering
-	
+    # Dagster agent token
+    aws secretsmanager put-secret-value \
+      --secret-id confluxdb/prod/dagster_agent_token \
+      --secret-string "<DAGSTER_CLOUD_AGENT_TOKEN>"
 
-💰 Kostenbewustzijn
+    # Worker managed secrets examples
+    aws secretsmanager put-secret-value \
+      --secret-id confluxdb/prod/worker/MELTANO_API_KEY \
+      --secret-string "<meltano_api_key>"
 
-Een zero-trust model met het 'principle of least privilege' verweven in elk component, van netwerk tot IAM.
-	
+Images
+------
+- Agent image: push to `module.ecr_dagster.repository_url` with tag `var.dagster_agent_image_tag`
+- Worker image: push to `module.ecr_confluxdb_code.repository_url` with tag `var.confluxdb_code_image_tag`
 
-Eén enkele bron van waarheid in Terraform voor reproduceerbare, auditeerbare en versie-gecontroleerde infrastructuur.
-	
+Secrets Management
+------------------
+- Agent token secret (managed by TF): `confluxdb/prod/dagster_agent_token`
+- Managed secrets maps (created by TF):
+  - `agent_managed_secrets` → injected into agent container
+  - `worker_managed_secrets` → injected into worker container
+- Additional pre-existing secrets can be injected via `dagster_agent_secrets` and `worker_secrets` (provide ARNs).
 
-Alles automatiseren, van CI/CD-pipelines tot resourceplanning, om menselijke fouten en operationele frictie te minimaliseren.
-	
+Security Model
+--------------
+- App security group is applied to agent and worker tasks; DB SG only allows ingress from the app SG on port 5432.
+- ECS task execution role (pulls images, logs, reads secrets) is distinct from the task role used by your code.
+- Dagster agent task role has permission to `ecs:RunTask` and `iam:PassRole` for the worker/execution roles.
 
-Gebruikmaken van serverless compute en geautomatiseerde schaling om infrastructuurkosten direct af te stemmen op platformgebruik.
-De Zero-Trust Netwerkperimeter
+Key Variables (excerpt)
+-----------------------
+- `dagster_agent_cpu`, `dagster_agent_memory`, `dagster_agent_desired_count`
+- `confluxdb_code_image_tag`, `worker_cpu`, `worker_memory`
+- `dagster_agent_env`, `dagster_agent_secrets`
+- `worker_env`, `worker_secrets`
+- `agent_managed_secrets`, `worker_managed_secrets`
+- `worker_task_role_policy_arns`
 
-    Onze VPC is een fort zonder publieke toegangspunten voor kritieke resources. Alle communicatie wordt expliciet gecontroleerd, wat volledige isolatie van het openbare internet garandeert.
+Outputs
+-------
+- `ecs_cluster_name`: ECS cluster name
+- `ecs_dagster_agent_service_name`: Agent service name
+- `ecs_worker_task_definition_arn`: Worker task definition ARN
+- `rds_master_user_secret_arn`: RDS master user secret ARN
+- `app_security_group_id`: App SG ID
+- `dagster_agent_token_secret_arn`: Agent token secret ARN (if created)
 
-Alle kritieke componenten zoals de RDS-database, het Fargate-dataplatform en de GitHub Runners bevinden zich in een privé-subnet. Ze hebben geen direct inkomend internetverkeer. Voor uitgaand verkeer (bijv. voor het downloaden van packages) wordt een NAT Gateway in een publiek subnet gebruikt. Communicatie met AWS-diensten zoals S3 en ECR verloopt veilig binnen het AWS-netwerk via VPC Endpoints.
-De Veilige Data- & Applicatiekern
+Troubleshooting
+---------------
+- Ensure AWS credentials are configured; `terraform plan` contacts AWS for data sources.
+- If using the S3 backend, verify the bucket/key/region exist; add DynamoDB locking if needed.
+- VPC endpoints for ECS/ECR/Logs/Secrets must be created for private networking to work.
 
-    Onze data en applicaties draaien op serverless Fargate, erven sterke isolatie en worden beheerd door fijnmazige IAM-rollen die het 'principle of least privilege' afdwingen.
-
-Private & Veerkrachtige RDS Database
-
-    ✅ 100% Plaatsing in Privé Subnet: De database is niet bereikbaar vanaf het internet.
-
-    ✅ Versleuteld 'at Rest' & 'in-Transit': Data is altijd versleuteld.
-
-    ✅ Multi-AZ: Hoge beschikbaarheid en automatische failover.
-
-Scheiding van Fargate IAM-Rollen
-
-    We gebruiken twee afzonderlijke rollen voor elke service: één voor de ECS-agent om de container te starten, en één voor de applicatiecode zelf. Deze scheiding is cruciaal voor 'least privilege' toegang.
-
-De Taakuitvoeringsrol heeft minimale permissies (ECR images pullen, logs sturen), terwijl de Taakrol specifieke permissies heeft die de applicatie nodig heeft (toegang tot de database, secrets, etc.).
-De Tijdelijke & Veilige Automatisatiemotor
-
-    CI/CD wordt geactiveerd via een veilige, ontkoppelde webhook-architectuur. Elke taak draait in een schone, eenmalig te gebruiken Fargate-container, die authenticeert met kortlevende tokens via OIDC, waardoor statische credentials worden geëlimineerd.
-
-Het proces is volledig geautomatiseerd en ontkoppeld om de veiligheid en betrouwbaarheid te maximaliseren.
-
-GitHub Webhook (op merge naar main) ➔ API Gateway (valideert verzoek) ➔ SQS Wachtrij (garandeert aflevering) ➔ Lambda Functie (start de runner) ➔ Tijdelijke Fargate Runner (voert CI/CD-taak uit en stopt).
-Geïntegreerde Beveiliging & Governance
-
-    Beveiliging is geen feature, het is de fundering. We gebruiken identiteitsgebaseerde netwerkregels en een gecentraliseerde strategie voor het beheer van secrets die hardgecodeerde credentials volledig elimineert.
-
-Securitygroepen als Identiteit
-
-    In plaats van breekbare IP-regels, definiëren we toegang op basis van de ID van de bron-securitygroep. Dit creëert dynamisch, veerkrachtig netwerkbeleid.
-
-┌─────────────────┐      ┌──────────────────────────────────────────┐      ┌─────────────────┐
-│                 │      │ Staat Inkomend Verkeer toe op Poort 5432 │      │                 │
-│    App SG       │─────▶│                                          │─────▶│      DB SG      │
-│ (Fargate Service) │      │           VAN: App SG ID               │      │ (RDS Instantie) │
-│                 │      └──────────────────────────────────────────┘      │                 │
-└─────────────────┘                                                        └─────────────────┘
-
-Veilig Beheer van Secrets
-
-    Secrets worden nooit in code opgeslagen. Ze worden veilig opgehaald tijdens runtime door de ECS-agent en direct als omgevingsvariabelen in de container geïnjecteerd, waardoor blootstelling wordt geminimaliseerd.
-
-Deze methode van Runtime Injectie is de standaard en meest veilige aanpak voor ~95% van alle gebruiksscenario's.
-
-© 2025 ConfluxDB. Een veilige, schaalbare en geautomatiseerde infrastructuur.
+License
+-------
+Proprietary. All rights reserved unless stated otherwise by the repository owner.

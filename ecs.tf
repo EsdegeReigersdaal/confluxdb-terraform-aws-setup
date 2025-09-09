@@ -1,80 +1,128 @@
-module "ecs" {
-  source  = "terraform-aws-modules/ecs/aws"
-  version = "~> 9.0"
+############################################
+# ECS Cluster, Dagster Agent, and Worker TD
+############################################
 
-  cluster_name = "${local.project_name}-${local.environment}-cluster"
-
-  create_cloudwatch_log_group = true
-  cloudwatch_log_group_name   = "/ecs/${local.project_name}-${local.environment}"
-
-  create_iam_roles      = true
-  task_role_policy_arns = [aws_iam_policy.read_rds_secret.arn]
-
-  # ##############################################################################
-  # SERVICE DEFINITION (Dagster UI)
-  # ##############################################################################
-  services = {
-    dagster-ui = {
-      # Task Definition
-      cpu    = 256
-      memory = 512
-
-      container_definitions = {
-        dagster-webserver = {
-          essential = true
-          image     = "${module.ecr.repositories["dagster"].repository_url}:latest"
-          port_mappings = [{
-            container_port = 3000
-            host_port      = 3000
-          }]
-
-          secrets = [
-            { name = "DB_USERNAME", valueFrom = "${module.rds.master_user_secret.arn}:username::" },
-            { name = "DB_PASSWORD", valueFrom = "${module.rds.master_user_secret.arn}:password::" },
-            { name = "DB_HOST", valueFrom = "${module.rds.master_user_secret.arn}:host::" },
-            { name = "DB_PORT", valueFrom = "${module.rds.master_user_secret.arn}:port::" },
-            { name = "DB_NAME", valueFrom = "${module.rds.master_user_secret.arn}:dbname::" },
-          ]
-        }
-      }
-
-      desired_count      = 1
-      subnet_ids         = module.vpc.private_subnets
-      security_group_ids = [module.app_sg.security_group_id]
-
-      load_balancer = {
-        create_alb             = true
-        vpc_id                 = module.vpc.vpc_id
-        alb_name               = "${local.project_name}-${local.environment}-alb"
-        alb_subnet_ids         = module.vpc.public_subnets
-        alb_security_group_ids = [module.lb_sg.security_group_id]
-
-        # Target Group settings
-        target_group = {
-          port     = 3000
-          protocol = "HTTP"
-          health_check = {
-            path                = "/dagit_info"
-            protocol            = "HTTP"
-            matcher             = "200"
-            interval            = 30
-            timeout             = 5
-            healthy_threshold   = 2
-            unhealthy_threshold = 2
-          }
-        }
-
-        # Listener settings
-        listener = {
-          port     = 80
-          protocol = "HTTP"
-        }
-      }
+locals {
+  # If a managed secret for the agent token exists, automatically pass it to the container
+  dagster_agent_token_secret_entries = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? [
+    {
+      name      = "DAGSTER_CLOUD_AGENT_TOKEN"
+      valueFrom = aws_secretsmanager_secret.dagster_agent_token[0].arn
     }
+  ] : []
+
+  # Managed secrets created via variables for agent/worker
+  agent_managed_secret_entries  = [for k, s in aws_secretsmanager_secret.agent_managed : { name = k, valueFrom = s.arn }]
+  worker_managed_secret_entries = [for k, s in aws_secretsmanager_secret.worker_managed : { name = k, valueFrom = s.arn }]
+}
+
+resource "aws_ecs_cluster" "cluster" {
+  name = "${local.project_name}-${local.environment}-ecs"
+}
+
+# CloudWatch logs for the agent container
+resource "aws_cloudwatch_log_group" "ecs_agent" {
+  name              = "/aws/ecs/${local.project_name}-${local.environment}/agent"
+  retention_in_days = var.dagster_agent_log_retention_days
+}
+
+# Dagster agent task definition (service)
+resource "aws_ecs_task_definition" "dagster_agent" {
+  family                   = "${local.project_name}-${local.environment}-dagster-agent"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.dagster_agent_cpu
+  memory                   = var.dagster_agent_memory
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.dagster_agent_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "dagster-agent"
+      image     = "${module.ecr_dagster.repository_url}:${var.dagster_agent_image_tag}"
+      essential = true
+      cpu       = var.dagster_agent_cpu
+      memory    = var.dagster_agent_memory
+
+      environment = [for k, v in var.dagster_agent_env : { name = k, value = v }]
+      secrets = concat(
+        [for s in var.dagster_agent_secrets : { name = s.name, valueFrom = s.value_from }],
+        local.dagster_agent_token_secret_entries,
+        local.agent_managed_secret_entries
+      )
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs_agent.name
+          awslogs-region        = local.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+      readonlyRootFilesystem = true
+    }
+  ])
+}
+
+# Dagster agent ECS service
+resource "aws_ecs_service" "dagster_agent" {
+  name                   = "${local.project_name}-${local.environment}-dagster-agent"
+  cluster                = aws_ecs_cluster.cluster.id
+  task_definition        = aws_ecs_task_definition.dagster_agent.arn
+  desired_count          = var.dagster_agent_desired_count
+  launch_type            = "FARGATE"
+  enable_execute_command = true
+
+  network_configuration {
+    subnets          = module.vpc.private_subnets
+    security_groups  = [module.app_sg.security_group_id]
+    assign_public_ip = false
   }
 
-  tags = {
-    Project     = local.project_name
-    Environment = local.environment
+  lifecycle {
+    ignore_changes = [desired_count]
   }
+}
+
+# CloudWatch logs for worker tasks
+resource "aws_cloudwatch_log_group" "ecs_worker" {
+  name              = "/aws/ecs/${local.project_name}-${local.environment}/worker"
+  retention_in_days = var.worker_log_retention_days
+}
+
+# Ephemeral worker task definition used by the agent via RunTask
+resource "aws_ecs_task_definition" "worker" {
+  family                   = "${local.project_name}-${local.environment}-worker"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.worker_cpu
+  memory                   = var.worker_memory
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.confluxdb_worker_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "worker"
+      image     = "${module.ecr_confluxdb_code.repository_url}:${var.confluxdb_code_image_tag}"
+      essential = true
+      cpu       = var.worker_cpu
+      memory    = var.worker_memory
+
+      environment = [for k, v in var.worker_env : { name = k, value = v }]
+      secrets = concat(
+        [for s in var.worker_secrets : { name = s.name, valueFrom = s.value_from }],
+        local.worker_managed_secret_entries
+      )
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs_worker.name
+          awslogs-region        = local.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+      readonlyRootFilesystem = true
+    }
+  ])
 }
