@@ -18,6 +18,14 @@ jobs:
     environment: production
     env:
       DAGSTER_AGENT_TOKEN: ${{ secrets.DAGSTER_AGENT_TOKEN }}
+      DAGSTER_CLOUD_URL_PROD: ${{ vars.DAGSTER_CLOUD_URL_PROD }}
+      DAGSTER_CLOUD_URL_DEV: ${{ vars.DAGSTER_CLOUD_URL_DEV }}
+      DAGSTER_AGENT_IMAGE_TAG: ${{ vars.DAGSTER_AGENT_IMAGE_TAG }}
+      CONFLUXDB_CODE_IMAGE_TAG: ${{ vars.CONFLUXDB_CODE_IMAGE_TAG }}
+      AGENT_MANAGED_SECRETS_JSON: ${{ vars.AGENT_MANAGED_SECRETS_JSON }}
+      WORKER_MANAGED_SECRETS_JSON: ${{ vars.WORKER_MANAGED_SECRETS_JSON }}
+      WORKER_SECRETS_JSON: ${{ vars.WORKER_SECRETS_JSON }}
+      WORKER_TASK_ROLE_POLICY_ARNS_JSON: ${{ vars.WORKER_TASK_ROLE_POLICY_ARNS_JSON }}
 
     defaults:
       run:
@@ -52,9 +60,38 @@ jobs:
       - name: Terraform Validate
         run: terraform validate -no-color
 
+      - name: Build runtime tfvars (no repo tfvars)
+        run: |
+          if [[ "${TF_ENV}" == "prod" ]]; then
+            DAGSTER_CLOUD_URL="$DAGSTER_CLOUD_URL_PROD"
+          else
+            DAGSTER_CLOUD_URL="$DAGSTER_CLOUD_URL_DEV"
+          fi
+          : "${AGENT_MANAGED_SECRETS_JSON:='{}'}"
+          : "${WORKER_MANAGED_SECRETS_JSON:='{}'}"
+          : "${WORKER_SECRETS_JSON:='[]'}"
+          : "${WORKER_TASK_ROLE_POLICY_ARNS_JSON:='[]'}"
+          cat > runtime.auto.tfvars.json <<EOF
+          {
+            "aws_region": "eu-west-1",
+            "environment": "${TF_ENV}",
+            "dagster_agent_env": {
+              "DAGSTER_CLOUD_URL": "${DAGSTER_CLOUD_URL}",
+              "DAGSTER_ENV": "${TF_ENV}"
+            },
+            "dagster_agent_image_tag": "${DAGSTER_AGENT_IMAGE_TAG}",
+            "confluxdb_code_image_tag": "${CONFLUXDB_CODE_IMAGE_TAG}",
+            "create_dagster_agent_token_secret": true,
+            "agent_managed_secrets": ${AGENT_MANAGED_SECRETS_JSON},
+            "worker_managed_secrets": ${WORKER_MANAGED_SECRETS_JSON},
+            "worker_secrets": ${WORKER_SECRETS_JSON},
+            "worker_task_role_policy_arns": ${WORKER_TASK_ROLE_POLICY_ARNS_JSON}
+          }
+          EOF
+
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color -var-file="environments/${TF_ENV}.tfvars" -out=tfplan
+        run: terraform plan -no-color -out=tfplan
 
       - name: Append plan to job summary
         if: always()
@@ -71,4 +108,3 @@ jobs:
             --secret-id "confluxdb/${TF_ENV}/dagster_agent_token" \
             --secret-string "$DAGSTER_AGENT_TOKEN" \
             --region eu-west-1
-

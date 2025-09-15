@@ -107,6 +107,60 @@ Troubleshooting
 - If using the S3 backend, verify the bucket/key/region exist; add DynamoDB locking if needed.
 - VPC endpoints for ECS/ECR/Logs/Secrets must be created for private networking to work.
 
+CI/CD Inputs (GitHub)
+---------------------
+Provide these via GitHub Repository Variables and Secrets. The workflow composes a `runtime.auto.tfvars.json` from them at run time, so you don’t commit tfvars.
+
+Variables (non-sensitive)
+
+| Name | Type | Example | Description |
+| ---- | ---- | ------- | ----------- |
+| `IAM_ROLE_ARN` | string | `arn:aws:iam::123456789012:role/confluxdb-prod-GithubActionsRole` | OIDC role assumed by the workflow |
+| `DAGSTER_CLOUD_URL_PROD` | string | `https://esdege-reigersdaal.dagster.plus/prod` | Dagster Cloud URL (prod) |
+| `DAGSTER_CLOUD_URL_DEV` | string | `https://esdege-reigersdaal.dagster.plus/dev` | Dagster Cloud URL (dev) |
+| `DAGSTER_AGENT_IMAGE_TAG` | string | `v1.0.0` | Tag for Dagster agent image |
+| `CONFLUXDB_CODE_IMAGE_TAG` | string | `v1.0.0` | Tag for ConfluxDB worker image |
+| `AGENT_MANAGED_SECRETS_JSON` | JSON object | `{}` | Map of agent secret names to metadata (values set post-apply) |
+| `WORKER_MANAGED_SECRETS_JSON` | JSON object | `{}` | Map of worker secret names to metadata (values set post-apply) |
+| `WORKER_SECRETS_JSON` | JSON array | `[]` | List of pre-existing secret ARNs to inject (e.g., DB secret) |
+| `WORKER_TASK_ROLE_POLICY_ARNS_JSON` | JSON array | `[]` | List of managed policy ARNs to attach to worker task role |
+
+Secrets (sensitive)
+
+| Name | Example | Description |
+| ---- | ------- | ----------- |
+| `DAGSTER_AGENT_TOKEN` | `dagster1-...` | Agent token written to Secrets Manager post-apply |
+
+JSON payload examples
+
+Worker pre-existing secrets (after first apply, paste RDS secret ARN):
+
+```
+WORKER_SECRETS_JSON = [
+  {
+    "name": "DATABASE_SECRET_ARN",
+    "value_from": "<paste terraform output rds_master_user_secret_arn>"
+  }
+]
+```
+
+Worker managed secrets to create (values set post-apply via AWS CLI):
+
+```
+WORKER_MANAGED_SECRETS_JSON = {
+  "MELTANO_API_KEY": {},
+  "SQLMESH_API_KEY": {}
+}
+```
+
+Attach policies to worker task role (least privilege recommended):
+
+```
+WORKER_TASK_ROLE_POLICY_ARNS_JSON = [
+  "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+]
+```
+
 License
 -------
 Proprietary. All rights reserved unless stated otherwise by the repository owner.

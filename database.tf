@@ -20,7 +20,7 @@ module "rds" {
 
   identifier = "${local.project_name}-${local.environment}-rds"
 
-  family                = "postgres17.5"
+  family                = "postgres17"
   engine                = "postgres"
   engine_version        = "17.5"
   instance_class        = "db.t4g.micro"

@@ -48,14 +48,6 @@ module "endpoints" {
       security_group_ids  = [module.vpc_endpoint_sg.security_group_id]
       private_dns_enabled = true
       tags                = { Name = "${local.project_name}-secretsmanager-vpc-endpoint" }
-    },
-
-    logs = {
-      service             = "logs"
-      subnet_ids          = module.vpc.private_subnets
-      security_group_ids  = [module.vpc_endpoint_sg.security_group_id]
-      private_dns_enabled = true
-      tags                = { Name = "${local.project_name}-logs-vpc-endpoint" }
     }
   }
 

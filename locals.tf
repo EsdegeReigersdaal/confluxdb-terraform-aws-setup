@@ -8,7 +8,8 @@ locals {
   component_name     = "confluxdb-infra"
   owner_name         = "Michael"
   cost_center_name   = "confluxdb-prod"
-  availability_zones = data.aws_availability_zones.available.names
+  # Use a single Availability Zone to reduce baseline cost
+  availability_zones = [data.aws_availability_zones.available.names[0]]
   vpc_cidr           = "10.0.0.0/16"
   github_org         = "michael-esdege"
   github_repo        = "confluxdb"
