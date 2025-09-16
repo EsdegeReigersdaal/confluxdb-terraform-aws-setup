@@ -62,45 +62,44 @@ jobs:
             export DAGSTER_CLOUD_URL="$DAGSTER_CLOUD_URL_DEV"
           fi
           python - <<'PY'
-            import json
-            import os
-            import pathlib
-            import sys
-            
-            def parse_json_env(key, default):
-                raw = os.environ.get(key, '').strip()
-                if not raw:
-                    raw = default
-                if raw and raw[0] == raw[-1] and raw[0] in ("'", '"'):
-                    raw = raw[1:-1]
-                try:
-                    return json.loads(raw)
-                except json.JSONDecodeError as exc:
-                    sys.stderr.write(f"{key} must contain valid JSON: {exc}
-            Got: {raw!r}
-            ")
-                    sys.exit(1)
-            
-            config = {
-                "aws_region": "eu-west-1",
-                "environment": os.environ.get("TF_ENV", ""),
-                "github_agent_repo": "confluxdb-dagster-agent",
-                "github_worker_repo": "confluxdb",
-                "github_ci_branch": "main",
-                "dagster_agent_env": {
-                    "DAGSTER_CLOUD_URL": os.environ.get("DAGSTER_CLOUD_URL", ""),
-                    "DAGSTER_ENV": os.environ.get("TF_ENV", ""),
-                },
-                "dagster_agent_image_tag": os.environ.get("DAGSTER_AGENT_IMAGE_TAG", ""),
-                "confluxdb_code_image_tag": os.environ.get("CONFLUXDB_CODE_IMAGE_TAG", ""),
-                "create_dagster_agent_token_secret": True,
-                "agent_managed_secrets": parse_json_env("AGENT_MANAGED_SECRETS_JSON", "{}"),
-                "worker_managed_secrets": parse_json_env("WORKER_MANAGED_SECRETS_JSON", "{}"),
-                "worker_secrets": parse_json_env("WORKER_SECRETS_JSON", "[]"),
-                "worker_task_role_policy_arns": parse_json_env("WORKER_TASK_ROLE_POLICY_ARNS_JSON", "[]"),
-            }
-            
-            pathlib.Path("runtime.auto.tfvars.json").write_text(json.dumps(config, indent=2) + "\n")
+          if True:
+              import json
+              import os
+              import pathlib
+              import sys
+
+              def parse_json_env(key, default):
+                  raw = os.environ.get(key, '').strip()
+                  if not raw:
+                      raw = default
+                  if raw and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+                      raw = raw[1:-1]
+                  try:
+                      return json.loads(raw)
+                  except json.JSONDecodeError as exc:
+                      sys.stderr.write(f"{key} must contain valid JSON: {exc}\nGot: {raw!r}\n")
+                      sys.exit(1)
+
+              config = {
+                  "aws_region": "eu-west-1",
+                  "environment": os.environ.get("TF_ENV", ""),
+                  "github_agent_repo": "confluxdb-dagster-agent",
+                  "github_worker_repo": "confluxdb",
+                  "github_ci_branch": "main",
+                  "dagster_agent_env": {
+                      "DAGSTER_CLOUD_URL": os.environ.get("DAGSTER_CLOUD_URL", ""),
+                      "DAGSTER_ENV": os.environ.get("TF_ENV", ""),
+                  },
+                  "dagster_agent_image_tag": os.environ.get("DAGSTER_AGENT_IMAGE_TAG", ""),
+                  "confluxdb_code_image_tag": os.environ.get("CONFLUXDB_CODE_IMAGE_TAG", ""),
+                  "create_dagster_agent_token_secret": True,
+                  "agent_managed_secrets": parse_json_env("AGENT_MANAGED_SECRETS_JSON", "{}"),
+                  "worker_managed_secrets": parse_json_env("WORKER_MANAGED_SECRETS_JSON", "{}"),
+                  "worker_secrets": parse_json_env("WORKER_SECRETS_JSON", "[]"),
+                  "worker_task_role_policy_arns": parse_json_env("WORKER_TASK_ROLE_POLICY_ARNS_JSON", "[]"),
+              }
+
+              pathlib.Path("runtime.auto.tfvars.json").write_text(json.dumps(config, indent=2) + "\n")
           PY
 
       - name: Terraform Init
