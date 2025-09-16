@@ -20,8 +20,11 @@ locals {
     DAGSTER_CLOUD_ORGANIZATION = var.dagster_cloud_organization
     DAGSTER_CLOUD_DEPLOYMENT   = var.dagster_cloud_deployment
   }
-  dagster_url_env    = var.dagster_cloud_url != null && var.dagster_cloud_url != "" ? { DAGSTER_CLOUD_URL = var.dagster_cloud_url } : {}
-  dagster_api_env    = var.dagster_cloud_url != null && var.dagster_cloud_url != "" ? { DAGSTER_CLOUD_API_URL = format("%s/graphql", trimsuffix(var.dagster_cloud_url, "/")) } : {}
+  dagster_cloud_url_trimmed = var.dagster_cloud_url == null ? null : trimsuffix(var.dagster_cloud_url, "/")
+  dagster_url_env           = var.dagster_cloud_url != null && var.dagster_cloud_url != "" ? { DAGSTER_CLOUD_URL = var.dagster_cloud_url } : {}
+  dagster_api_env = local.dagster_cloud_url_trimmed != null && local.dagster_cloud_url_trimmed != "" ? {
+    DAGSTER_CLOUD_API_URL = format("%s%s", local.dagster_cloud_url_trimmed, endswith(local.dagster_cloud_url_trimmed, "/graphql") ? "" : "/graphql")
+  } : {}
   dagster_branch_env = { DAGSTER_CLOUD_BRANCH_DEPLOYMENTS = tostring(var.dagster_cloud_branch_deployments) }
 
   # DAGSTER_HOME for agent writable path (overridable via dagster_agent_env)
