@@ -22,10 +22,8 @@ locals {
   }
   dagster_cloud_url_trimmed = var.dagster_cloud_url == null ? null : trimsuffix(var.dagster_cloud_url, "/")
   dagster_url_env           = var.dagster_cloud_url != null && var.dagster_cloud_url != "" ? { DAGSTER_CLOUD_URL = var.dagster_cloud_url } : {}
-  dagster_api_env = local.dagster_cloud_url_trimmed != null && local.dagster_cloud_url_trimmed != "" ? {
-    DAGSTER_CLOUD_API_URL = format("%s%s", local.dagster_cloud_url_trimmed, endswith(local.dagster_cloud_url_trimmed, "/graphql") ? "" : "/graphql")
-  } : {}
-  dagster_branch_env = { DAGSTER_CLOUD_BRANCH_DEPLOYMENTS = tostring(var.dagster_cloud_branch_deployments) }
+  dagster_api_env           = local.dagster_cloud_url_trimmed != null && local.dagster_cloud_url_trimmed != "" ? { DAGSTER_CLOUD_API_URL = local.dagster_cloud_url_trimmed } : {}
+  dagster_branch_env        = { DAGSTER_CLOUD_BRANCH_DEPLOYMENTS = tostring(var.dagster_cloud_branch_deployments) }
 
   # DAGSTER_HOME for agent writable path (overridable via dagster_agent_env)
   dagster_home_env = { DAGSTER_HOME = "/opt/dagster/dagster_home" }
@@ -114,6 +112,9 @@ resource "aws_cloudwatch_log_group" "ecs_agent" {
 
 # Dagster agent task definition (service)
 resource "aws_ecs_task_definition" "dagster_agent" {
+  lifecycle {
+    ignore_changes = [container_definitions]
+  }
   family                   = "${local.project_name}-${local.environment}-dagster-agent"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
