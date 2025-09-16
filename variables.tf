@@ -26,6 +26,7 @@ variable "dagster_agent_image_tag" {
   default     = "latest"
 }
 
+
 variable "dagster_agent_env" {
   description = "Environment variables for the Dagster agent container"
   type        = map(string)
@@ -149,4 +150,64 @@ variable "environment" {
   description = "Deployment environment (e.g., dev, prod)"
   type        = string
   default     = "prod"
+}
+
+############################
+# Dagster Cloud runtime config
+############################
+
+variable "dagster_cloud_organization" {
+  description = "Dagster Cloud organization slug (DAGSTER_CLOUD_ORGANIZATION)"
+  type        = string
+  default     = "esdege-reigersdaal"
+}
+
+variable "dagster_cloud_deployment" {
+  description = "Dagster Cloud deployment name (DAGSTER_CLOUD_DEPLOYMENT)"
+  type        = string
+  default     = "confluxdb"
+}
+
+variable "dagster_cloud_url" {
+  description = "Dagster Cloud control plane URL (set to https://eu.dagster.cloud for EU)"
+  type        = string
+  default     = "https://eu.dagster.cloud"
+}
+
+variable "dagster_cloud_branch_deployments" {
+  description = "Whether the agent should serve branch deployments (true/false)"
+  type        = bool
+  default     = false
+}
+
+############################
+# CI/CD repo config (agent/worker)
+############################
+
+variable "github_agent_repo" {
+  description = "GitHub repository NAME (without org) for the Dagster agent image CI (e.g., 'dagster-agent')."
+  type        = string
+  default     = "confluxdb-dagster-agent"
+}
+
+variable "github_worker_repo" {
+  description = "GitHub repository NAME (without org) for the worker code image CI (e.g., 'confluxdb-code')."
+  type        = string
+  default     = "confluxdb"
+}
+
+variable "github_ci_branch" {
+  description = "Branch name in the app repos allowed to assume their CI roles (e.g., 'main')."
+  type        = string
+  default     = "main"
+}
+
+############################
+# Ops toggles
+############################
+
+variable "enable_vpc_endpoints" {
+  description = "Enable interface VPC endpoints (ECR API/DKR, ECS, Secrets Manager). S3 Gateway endpoint remains enabled regardless."
+  type        = bool
+  default     = false
 }

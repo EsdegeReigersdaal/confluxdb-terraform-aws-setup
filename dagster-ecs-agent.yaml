@@ -1,0 +1,422 @@
+# Copyright 2024 Elementl Inc d.b.a. DagsterLabs
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >
+  Deploys a Dagster Cloud user agent to a new or existing ECS cluster in a pre-existing VPC.
+  Version 1.11.10.
+  See https://docs.dagster.cloud/agents/ecs/setup for more details.
+
+Outputs:
+  TemplateVersion:
+    Description: The revision of the ECS agent template.
+    Value: 1.11.10
+
+Parameters:
+  DagsterOrganization:
+    Type: String
+    Description: Enter your organization name as it appears in the dagster.cloud subdomain, e.g. `hooli` corresponding with https://hooli.dagster.cloud/.
+    AllowedPattern: "^[a-zA-Z0-9-_]*$"
+  DagsterDeployment:
+    Type: String
+    Description: Enter your deployment name, e.g. `prod` corresponding with https://hooli.dagster.cloud/prod/. Leave empty to only serve branch deployments.
+    AllowedPattern: "^[a-zA-Z0-9-_]*$"
+  EnableBranchDeployments:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: false
+    Description: Whether this agent should serve branch deployments. For more information, see https://docs.dagster.io/dagster-cloud/developing-testing/branch-deployments.
+  AgentToken:
+    Type: String
+    Description: A Dagster agent token, obtained on https://{organization}.dagster.cloud/{deployment}/org-settings/tokens.
+    NoEcho: true
+  ExistingVPC:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC containing the cluster to deploy the agent in. See https://docs.aws.amazon.com/vpc/latest/userguide/working-with-vpcs.html for more information.
+  ExistingSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: A comma list of public subnets of the VPC with public internet access in which to deploy the agent in.
+  TaskLaunchType:
+    Type: String
+    AllowedValues:
+      - "FARGATE"
+      - "EC2"
+    Default: "FARGATE"
+    Description: The launch type of the tasks in the existing cluster (FARGATE or EC2).
+  ExistingCluster:
+    Type: String
+    Description: The name of an existing ECS cluster to deploy the agent in. Leave blank to create a new cluster.
+  EnableZeroDowntimeDeploys:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: false
+    Description: Whether to enable zero-downtime deployment for this agent. This means that when updating, the old agent will not spin down until the new agent is ready to serve requests.
+  NumReplicas:
+    Type: Number
+    Default: 1
+    Description: The number of agent replicas to keep active at a given time.
+    MinValue: 1
+    MaxValue: 5
+  AgentMetricsEnabled:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: false
+    Description: Whether to enable agent metrics. This will allow the agent to send metrics to the Dagster Cloud API.
+  CodeServerMetricsEnabled:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: false
+    Description: Whether to enable code server metrics. This will allow the agent to send metrics to the Dagster Cloud API.
+  AgentMemory:
+    Type: String
+    Default: "1024"
+    Description: The amount of memory to allocate to the agent. Defaults to 1024 MiB.
+  AgentCPU:
+    Type: String
+    Default: "256"
+    Description: The amount of AWS CPU to allocate to the agent. Defaults to 256 CPU units.
+
+Metadata:
+  TemplateVersion:
+    Description: 1.11.10
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Configuration"
+        Parameters:
+          - DagsterOrganization
+          - DagsterDeployment
+          - EnableBranchDeployments
+      - Label:
+          default: "Secrets"
+        Parameters:
+          - AgentToken
+      - Label:
+          default: "Infrastructure"
+        Parameters:
+          - ExistingVPC
+          - ExistingSubnets
+          - ExistingCluster
+          - TaskLaunchType
+    ParameterLabels:
+      DagsterOrganization:
+        default: "Dagster Cloud Organization"
+      DagsterDeployment:
+        default: "Dagster Cloud Deployment"
+      EnableBranchDeployments:
+        default: "Enable Branch Deployments"
+      AgentToken:
+        default: "Agent Token"
+      ExistingVPC:
+        default: "Deploy VPC"
+      ExistingSubnets:
+        default: "Deploy VPC Subnets"
+      ExistingCluster:
+        default: "Existing ECS Cluster Name"
+      TaskLaunchType:
+        default: "Task Launch Type (FARGATE or EC2)"
+
+Conditions:
+  CreateCluster: !Equals [!Ref ExistingCluster, ""]
+  IsDeploymentEmpty: !Equals [!Ref DagsterDeployment, ""]
+  IsZeroDowntimeDeploysEnabled:
+    Fn::Equals:
+      - !Ref EnableZeroDowntimeDeploys
+      - "true"
+
+Resources:
+  AgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+
+  AgentCluster:
+    Condition: CreateCluster
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "Dagster-Cloud-${DagsterOrganization}-${DagsterDeployment}-Cluster"
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  AgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: !Ref AgentCPU
+      Memory: !Ref AgentMemory
+      ContainerDefinitions:
+        - Name: DagsterAgent
+          Image: "docker.io/dagster/dagster-cloud-agent:1.11.10"
+          Environment:
+            - Name: DAGSTER_HOME
+              Value: "/opt/dagster/dagster_home"
+            - Name: DAGSTER_CLOUD_AGENT_MEMORY_LIMIT
+              Value: !Ref AgentMemory
+            - Name: DAGSTER_CLOUD_AGENT_CPU_LIMIT
+              Value: !Ref AgentCPU
+          EntryPoint:
+            - "bash"
+            - "-c"
+          StopTimeout: 120
+          Command:
+            - !Sub
+              - |-
+                /bin/bash -c "
+                mkdir -p $DAGSTER_HOME && echo 'instance_class:
+                  module: dagster_cloud
+                  class: DagsterCloudAgentInstance
+
+                dagster_cloud_api:
+                  url: \"https://${DagsterOrganization}.agent.dagster.cloud\"
+                  agent_token: \"${AgentToken}\"
+                  ${DeploymentConfig}
+                  branch_deployments: ${EnableBranchDeployments}
+
+                user_code_launcher:
+                  module: dagster_cloud.workspace.ecs
+                  class: EcsUserCodeLauncher
+                  config:
+                    cluster: ${ConfigCluster}
+                    subnets: [${ConfigSubnet}]
+                    service_discovery_namespace_id: ${ServiceDiscoveryNamespace}
+                    execution_role_arn: ${TaskExecutionRole.Arn}
+                    task_role_arn: ${AgentRole.Arn}
+                    log_group: ${AgentLogGroup}
+                    launch_type: ${TaskLaunchType}
+                    requires_healthcheck: ${EnableZeroDowntimeDeploys}
+                    code_server_metrics:
+                      enabled: ${CodeServerMetricsEnabled}
+                    agent_metrics:
+                      enabled: ${AgentMetricsEnabled}
+                ' > $DAGSTER_HOME/dagster.yaml && dagster-cloud agent run"
+              - ConfigCluster:
+                  !If [CreateCluster, !Ref AgentCluster, !Ref ExistingCluster]
+                ConfigSubnet: !Join [",", !Ref ExistingSubnets]
+                DeploymentConfig:
+                  !If [
+                    IsDeploymentEmpty,
+                    "",
+                    !Sub "deployment: ${DagsterDeployment}",
+                  ]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:
+                Ref: AgentLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: "agent"
+          HealthCheck:
+            !If
+              - IsZeroDowntimeDeploysEnabled
+              -
+                Command:
+                  - CMD-SHELL
+                  - test -f /opt/finished_initial_reconciliation_sentinel.txt
+                # We intentionally extend Interval, StartPeriod, and Retries beyond the
+                # defaults because the initial reconciliation loop can take anywhere from
+                # 3-15 minutes to complete - only upon which is the new agent ready to
+                # serve requests.
+                # Time (seconds) between subsequent health checks.
+                Interval: 60
+                # Grace period to provide time to bootstrap container before performing health checks
+                StartPeriod: 300
+                Retries: 10
+              - !Ref "AWS::NoValue"
+      ExecutionRoleArn:
+        Ref: TaskExecutionRole
+      TaskRoleArn:
+        Ref: AgentRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+
+  AgentService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !If [CreateCluster, !Ref AgentCluster, !Ref ExistingCluster]
+      DesiredCount: !Ref NumReplicas
+      LaunchType: FARGATE
+      # prevents two agent tasks running simultaneously in update scenarios
+      DeploymentConfiguration:
+        MaximumPercent: !If [IsZeroDowntimeDeploysEnabled, 200, 100]
+        MinimumHealthyPercent: !If [IsZeroDowntimeDeploysEnabled, 100, 0]
+        DeploymentCircuitBreaker:
+          Enable: True
+          Rollback: True
+      TaskDefinition:
+        Ref: AgentTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref ExistingSubnets
+          AssignPublicIp: "ENABLED"
+
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Vpc:
+        Ref: ExistingVPC
+      Name: !Sub
+        - "dagster-agent-${DagsterOrganization}-${DagsterDeployment}-${UUID}.local"
+        - UUID:
+            !Select [
+              4,
+              !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]],
+            ]
+      Properties:
+        DnsProperties:
+          SOA:
+            TTL: 100
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "ecs-tasks.amazonaws.com"
+            Action:
+              - sts:AssumeRole
+            Condition:
+              ArnLike:
+                "aws:SourceArn": !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:*"
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Policies:
+        - PolicyName: secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:ListTagsForResource
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:ListSecrets
+                Resource: "*"
+
+  AgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "ecs-tasks.amazonaws.com"
+            Action:
+              - sts:AssumeRole
+            Condition:
+              ArnLike:
+                "aws:SourceArn": !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:*"
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+      Path: "/"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:ListTagsForResource
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:ListSecrets
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeRouteTables
+                  - ec2:DescribeNetworkInterfaces
+                  - ecs:ListAccountSettings
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecs:CreateService
+                  - ecs:DeleteService
+                  - ecs:DescribeServices
+                  - ecs:DescribeTasks
+                  - ecs:ListServices
+                  - ecs:ListTasks
+                  - ecs:RunTask
+                  - ecs:StopTask
+                  - ecs:UpdateService
+                Resource: "*"
+                # When AgentCluster param is set this breaks
+                # Condition:
+                #   ArnLike:
+                #     "ecs:cluster": !GetAtt AgentCluster.Arn
+              - Effect: Allow
+                Action:
+                  - ecs:TagResource
+                Resource: "*"
+                # When AgentCluster param is set this breaks
+                # Resource: !Sub "${AgentCluster.Arn}*"
+              # No way to scope down these further :(
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                  - ecs:TagResource
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - logs:GetLogEvents
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${AgentLogGroup}:log-stream:*"
+              - Effect: Allow
+                Action:
+                  - servicediscovery:ListServices
+                  - servicediscovery:ListTagsForResource
+                  - servicediscovery:ListInstances
+                  - servicediscovery:DeregisterInstance
+                  - servicediscovery:GetOperation
+                  - servicediscovery:DeleteService
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - servicediscovery:GetNamespace
+                Resource:
+                  - !GetAtt ServiceDiscoveryNamespace.Arn
+              - Effect: Allow
+                Action:
+                  - servicediscovery:CreateService
+                  - servicediscovery:TagResource
+                Resource:
+                  - !GetAtt ServiceDiscoveryNamespace.Arn
+                  - !Sub "arn:aws:servicediscovery:${AWS::Region}:${AWS::AccountId}:service/*"
+              - Effect: Allow
+                Action:
+                  - tag:GetResources
+                Resource: "*"

@@ -51,6 +51,11 @@ output "ecs_worker_task_definition_arn" {
   value       = aws_ecs_task_definition.worker.arn
 }
 
+output "ecs_worker_task_family" {
+  description = "Task definition family name for the worker (use in CI)"
+  value       = aws_ecs_task_definition.worker.family
+}
+
 output "app_security_group_id" {
   description = "Security group ID used by agent and worker tasks"
   value       = module.app_sg.security_group_id
@@ -64,4 +69,34 @@ output "dagster_agent_token_secret_arn" {
 output "rds_master_user_secret_arn" {
   description = "ARN of the RDS master user secret (from module.rds)"
   value       = module.rds.db_instance_master_user_secret_arn
+}
+
+output "agent_ci_role_arn" {
+  description = "IAM Role ARN for the Dagster agent repo CI (assume via GitHub OIDC)"
+  value       = aws_iam_role.app_repo_agent_ci.arn
+}
+
+output "worker_ci_role_arn" {
+  description = "IAM Role ARN for the worker code repo CI (assume via GitHub OIDC)"
+  value       = aws_iam_role.app_repo_worker_ci.arn
+}
+
+output "ecr_dagster_repository_url" {
+  description = "ECR repository URL for Dagster agent image"
+  value       = module.ecr_dagster.repository_url
+}
+
+output "ecr_confluxdb_code_repository_url" {
+  description = "ECR repository URL for worker code image"
+  value       = module.ecr_confluxdb_code.repository_url
+}
+
+output "service_discovery_namespace_id" {
+  description = "Cloud Map private DNS namespace ID for Dagster ECS code servers"
+  value       = aws_service_discovery_private_dns_namespace.dagster.id
+}
+
+output "service_discovery_namespace_name" {
+  description = "Cloud Map private DNS namespace name"
+  value       = aws_service_discovery_private_dns_namespace.dagster.name
 }

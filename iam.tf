@@ -138,13 +138,46 @@ resource "aws_iam_role_policy" "dagster_agent_ecs_control" {
       {
         Effect = "Allow"
         Action = [
-          "ecs:RunTask",
-          "ecs:DescribeTasks",
+          "ecs:CreateService",
+          "ecs:DeleteService",
+          "ecs:DescribeClusters",
+          "ecs:DescribeServices",
           "ecs:DescribeTaskDefinition",
+          "ecs:DescribeTasks",
+          "ecs:ListAccountSettings",
+          "ecs:ListServices",
           "ecs:ListTasks",
-          "ecs:DescribeClusters"
+          "ecs:RegisterTaskDefinition",
+          "ecs:RunTask",
+          "ecs:StopTask",
+          "ecs:TagResource",
+          "ecs:UpdateService"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeRouteTables"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:ListTagsForResource",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:ListSecrets",
+          "tag:GetResources"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:GetLogEvents"]
+        Resource = format("%s:log-stream:*", aws_cloudwatch_log_group.ecs_agent.arn)
       },
       {
         Effect = "Allow"
@@ -156,6 +189,30 @@ resource "aws_iam_role_policy" "dagster_agent_ecs_control" {
         Condition = {
           StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
         }
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "servicediscovery:ListServices",
+          "servicediscovery:ListTagsForResource",
+          "servicediscovery:ListInstances",
+          "servicediscovery:DeregisterInstance",
+          "servicediscovery:GetOperation",
+          "servicediscovery:DeleteService"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "servicediscovery:GetNamespace",
+          "servicediscovery:CreateService",
+          "servicediscovery:TagResource"
+        ],
+        Resource = [
+          aws_service_discovery_private_dns_namespace.dagster.arn,
+          "arn:aws:servicediscovery:${local.aws_region}:${data.aws_caller_identity.current.account_id}:service/*"
+        ]
       }
     ]
   })
@@ -183,4 +240,252 @@ resource "aws_iam_role_policy_attachment" "worker_attach" {
   for_each   = { for arn in var.worker_task_role_policy_arns : arn => arn }
   role       = aws_iam_role.confluxdb_worker_task_role.name
   policy_arn = each.value
+}
+
+################################################################################
+# SECTION 3: CI ROLES FOR APP REPOS (Agent + Worker)
+################################################################################
+
+# Trust policy helpers
+data "aws_iam_policy_document" "oidc_assume_agent" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${local.github_org}/${var.github_agent_repo}:ref:refs/heads/${var.github_ci_branch}"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "oidc_assume_worker" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${local.github_org}/${var.github_worker_repo}:ref:refs/heads/${var.github_ci_branch}"]
+    }
+  }
+}
+
+# Role assumed by the Dagster Agent image repo CI to push to ECR and deploy ECS
+resource "aws_iam_role" "app_repo_agent_ci" {
+  name               = "${local.project_name}-${local.environment}-agent-ci-role"
+  assume_role_policy = data.aws_iam_policy_document.oidc_assume_agent.json
+  description        = "CI role for agent repo to push ECR and deploy ECS service"
+}
+
+# Role assumed by the Worker code image repo CI to push to ECR and register TDs
+resource "aws_iam_role" "app_repo_worker_ci" {
+  name               = "${local.project_name}-${local.environment}-worker-ci-role"
+  assume_role_policy = data.aws_iam_policy_document.oidc_assume_worker.json
+  description        = "CI role for worker repo to push ECR and register ECS task defs"
+}
+
+# ---------------------------
+# Agent CI permissions
+# ---------------------------
+
+resource "aws_iam_policy" "agent_ci_ecr_push" {
+  name        = "${local.project_name}-${local.environment}-agent-ci-ecr-push"
+  description = "Allow pushing to the Dagster agent ECR repo"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = ["ecr:GetAuthorizationToken"],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:CompleteLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:DescribeRepositories",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage"
+        ],
+        Resource = [
+          module.ecr_dagster.repository_arn,
+          "${module.ecr_dagster.repository_arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "agent_ci_ecs_deploy" {
+  name        = "${local.project_name}-${local.environment}-agent-ci-ecs-deploy"
+  description = "Allow registering task defs and updating the Dagster agent service"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ecs:DescribeClusters",
+          "ecs:DescribeServices",
+          "ecs:DescribeTaskDefinition",
+          "ecs:RegisterTaskDefinition",
+          "ecs:ListTaskDefinitions"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow",
+        Action   = ["ecs:UpdateService"],
+        Resource = aws_ecs_service.dagster_agent.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "agent_ci_passrole" {
+  name        = "${local.project_name}-${local.environment}-agent-ci-passrole"
+  description = "Allow passing required IAM roles when registering TDs"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = ["iam:PassRole"],
+        Resource = [
+          aws_iam_role.ecs_task_execution_role.arn,
+          aws_iam_role.dagster_agent_task_role.arn
+        ],
+        Condition = {
+          StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "agent_ci_attach_ecr" {
+  role       = aws_iam_role.app_repo_agent_ci.name
+  policy_arn = aws_iam_policy.agent_ci_ecr_push.arn
+}
+
+resource "aws_iam_role_policy_attachment" "agent_ci_attach_ecs" {
+  role       = aws_iam_role.app_repo_agent_ci.name
+  policy_arn = aws_iam_policy.agent_ci_ecs_deploy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "agent_ci_attach_passrole" {
+  role       = aws_iam_role.app_repo_agent_ci.name
+  policy_arn = aws_iam_policy.agent_ci_passrole.arn
+}
+
+# ---------------------------
+# Worker CI permissions
+# ---------------------------
+
+resource "aws_iam_policy" "worker_ci_ecr_push" {
+  name        = "${local.project_name}-${local.environment}-worker-ci-ecr-push"
+  description = "Allow pushing to the worker code ECR repo"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = ["ecr:GetAuthorizationToken"],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:CompleteLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:DescribeRepositories",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage"
+        ],
+        Resource = [
+          module.ecr_confluxdb_code.repository_arn,
+          "${module.ecr_confluxdb_code.repository_arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "worker_ci_register_td" {
+  name        = "${local.project_name}-${local.environment}-worker-ci-register-td"
+  description = "Allow describing and registering worker task definitions"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ecs:DescribeTaskDefinition",
+          "ecs:RegisterTaskDefinition",
+          "ecs:ListTaskDefinitions"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "worker_ci_passrole" {
+  name        = "${local.project_name}-${local.environment}-worker-ci-passrole"
+  description = "Allow passing required IAM roles when registering worker TDs"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = ["iam:PassRole"],
+        Resource = [
+          aws_iam_role.ecs_task_execution_role.arn,
+          aws_iam_role.confluxdb_worker_task_role.arn
+        ],
+        Condition = {
+          StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "worker_ci_attach_ecr" {
+  role       = aws_iam_role.app_repo_worker_ci.name
+  policy_arn = aws_iam_policy.worker_ci_ecr_push.arn
+}
+
+resource "aws_iam_role_policy_attachment" "worker_ci_attach_td" {
+  role       = aws_iam_role.app_repo_worker_ci.name
+  policy_arn = aws_iam_policy.worker_ci_register_td.arn
+}
+
+resource "aws_iam_role_policy_attachment" "worker_ci_attach_passrole" {
+  role       = aws_iam_role.app_repo_worker_ci.name
+  policy_arn = aws_iam_policy.worker_ci_passrole.arn
 }
