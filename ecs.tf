@@ -21,7 +21,7 @@ locals {
     DAGSTER_CLOUD_DEPLOYMENT   = var.dagster_cloud_deployment
   }
   dagster_url_env    = var.dagster_cloud_url != null && var.dagster_cloud_url != "" ? { DAGSTER_CLOUD_URL = var.dagster_cloud_url } : {}
-  dagster_api_env    = var.dagster_cloud_url != null && var.dagster_cloud_url != "" ? { DAGSTER_CLOUD_API_URL = var.dagster_cloud_url } : {}
+  dagster_api_env    = var.dagster_cloud_url != null && var.dagster_cloud_url != "" ? { DAGSTER_CLOUD_API_URL = format("%s/graphql", trimsuffix(var.dagster_cloud_url, "/")) } : {}
   dagster_branch_env = { DAGSTER_CLOUD_BRANCH_DEPLOYMENTS = tostring(var.dagster_cloud_branch_deployments) }
 
   # DAGSTER_HOME for agent writable path (overridable via dagster_agent_env)
@@ -57,12 +57,15 @@ locals {
 
   # Startup command to write dagster.yaml at runtime (for official manual provisioning Option A)
   dagster_agent_startup_command = <<-EOT
-    set -euo pipefail
+    set -eu
     mkdir -p "$DAGSTER_HOME"
+    DAGSTER_TMP="$DAGSTER_HOME/tmp"
+    mkdir -p "$DAGSTER_TMP"
+    export TMPDIR="$DAGSTER_TMP"
     DAGSTER_VENDOR="$DAGSTER_HOME/vendor"
     mkdir -p "$DAGSTER_VENDOR"
-    if [ ! -d "$DAGSTER_VENDOR/boto3" ]; then
-      python -m pip install --no-cache-dir --target "$DAGSTER_VENDOR" boto3
+    if [ ! -d "$DAGSTER_VENDOR/boto3" ] || [ ! -d "$DAGSTER_VENDOR/dagster_aws" ]; then
+      python -m pip install --no-cache-dir --target "$DAGSTER_VENDOR" boto3 dagster-aws
     fi
     export PYTHONPATH="$DAGSTER_VENDOR:$${PYTHONPATH:-}"
     cat > "$DAGSTER_HOME/dagster.yaml" << YAML
@@ -149,7 +152,7 @@ resource "aws_ecs_task_definition" "dagster_agent" {
         }
       }
       entryPoint = ["bash", "-lc"]
-      command    = [local.dagster_agent_startup_command]
+      command    = [replace(local.dagster_agent_startup_command, "\r", "")]
       mountPoints = [
         {
           sourceVolume  = "dagster-home"
@@ -224,3 +227,9 @@ resource "aws_ecs_task_definition" "worker" {
     }
   ])
 }
+
+
+
+
+
+
