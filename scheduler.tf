@@ -37,8 +37,20 @@ data "aws_iam_policy_document" "offhours_lambda_policy" {
       "ecs:UpdateService"
     ]
     resources = [
-      aws_ecs_service.dagster_agent.arn
+      aws_ecs_service.dagster_agent.arn,
+      format(
+        "arn:aws:ecs:%s:%s:service/%s/*",
+        local.aws_region,
+        data.aws_caller_identity.current.account_id,
+        aws_ecs_cluster.cluster.name,
+      )
     ]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["ecs:ListServices"]
+    resources = ["*"]
   }
 
   statement {
@@ -80,10 +92,12 @@ resource "aws_lambda_function" "offhours" {
 
   environment {
     variables = {
-      ECS_CLUSTER       = aws_ecs_cluster.cluster.arn
-      ECS_SERVICE       = aws_ecs_service.dagster_agent.name
-      ECS_DESIRED_COUNT = tostring(var.dagster_agent_desired_count)
-      RDS_INSTANCE_ID   = module.rds.db_instance_identifier
+      ECS_CLUSTER                    = aws_ecs_cluster.cluster.arn
+      ECS_AGENT_SERVICE              = aws_ecs_service.dagster_agent.name
+      ECS_AGENT_DESIRED_COUNT        = tostring(var.dagster_agent_desired_count)
+      ECS_CODE_SERVICE_PREFIX        = "${local.project_name}-${local.environment}-"
+      ECS_CODE_SERVICE_DESIRED_COUNT = "1"
+      RDS_INSTANCE_ID                = module.rds.db_instance_identifier
     }
   }
 
