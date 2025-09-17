@@ -235,6 +235,23 @@ resource "aws_iam_role" "confluxdb_worker_task_role" {
   description        = "Task role for ConfluxDB worker (Dagster/Meltano/SQLMesh)"
 }
 
+resource "aws_iam_role_policy" "worker_agent_token_secret_access" {
+  count = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? 1 : 0
+
+  name = "worker-agent-token-secret-access"
+  role = aws_iam_role.confluxdb_worker_task_role.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = ["secretsmanager:GetSecretValue"],
+        Resource = aws_secretsmanager_secret.dagster_agent_token[0].arn
+      }
+    ]
+  })
+}
+
 # Optional: attach additional managed policies to the worker task role (e.g., S3 access)
 resource "aws_iam_role_policy_attachment" "worker_attach" {
   for_each   = { for arn in var.worker_task_role_policy_arns : arn => arn }
@@ -473,6 +490,30 @@ resource "aws_iam_policy" "worker_ci_passrole" {
       }
     ]
   })
+}
+
+resource "aws_iam_policy" "worker_ci_agent_token_secret_access" {
+  count = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? 1 : 0
+
+  name        = "${local.project_name}-${local.environment}-worker-ci-agent-token-secret"
+  description = "Allow worker CI to read the Dagster agent token secret"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = ["secretsmanager:GetSecretValue"],
+        Resource = aws_secretsmanager_secret.dagster_agent_token[0].arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "worker_ci_attach_agent_token_secret" {
+  count = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? 1 : 0
+
+  role       = aws_iam_role.app_repo_worker_ci.name
+  policy_arn = aws_iam_policy.worker_ci_agent_token_secret_access[0].arn
 }
 
 resource "aws_iam_role_policy_attachment" "worker_ci_attach_ecr" {
