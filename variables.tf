@@ -23,7 +23,7 @@ variable "dagster_agent_desired_count" {
 variable "dagster_agent_image_tag" {
   description = "Image tag for the Dagster agent ECR image"
   type        = string
-  default     = "latest"
+  default     = "ef5bc6925d9e"
 }
 
 
@@ -171,7 +171,7 @@ variable "dagster_cloud_deployment" {
 variable "dagster_cloud_url" {
   description = "Dagster Cloud control plane URL (set to https://eu.dagster.cloud for EU)"
   type        = string
-  default     = "https://eu.dagster.cloud"
+  default     = "https://esdege-reigersdaal.dagster.plus"
 }
 
 variable "dagster_cloud_branch_deployments" {

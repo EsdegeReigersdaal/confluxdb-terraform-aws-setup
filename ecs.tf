@@ -77,8 +77,8 @@ locals {
     dagster_cloud_api:
       url: "$${DAGSTER_CLOUD_API_URL}"
       agent_token: "$${DAGSTER_CLOUD_AGENT_TOKEN}"
-      deployment: "$${DAGSTER_CLOUD_DEPLOYMENT}"
-      branch_deployments: $${DAGSTER_CLOUD_BRANCH_DEPLOYMENTS}
+      branch_deployments: true
+      deployment: "prod"
 
     user_code_launcher:
       module: dagster_cloud.workspace.ecs
