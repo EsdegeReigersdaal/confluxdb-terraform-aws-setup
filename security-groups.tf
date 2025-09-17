@@ -49,6 +49,16 @@ module "app_sg" {
   ]
 }
 
+resource "aws_security_group_rule" "app_sg_allow_internal_code_server" {
+  description              = "Allow Dagster agent to reach worker code servers on gRPC port"
+  type                     = "ingress"
+  from_port                = 4000
+  to_port                  = 4000
+  protocol                 = "tcp"
+  security_group_id        = module.app_sg.security_group_id
+  source_security_group_id = module.app_sg.security_group_id
+}
+
 # -----------------------------------------------------------------------------
 # Security Group for the RDS Database (This remains the same)
 # Allows traffic only from the application's security group on the PostgreSQL port.
