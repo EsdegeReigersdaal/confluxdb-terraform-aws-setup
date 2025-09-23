@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  repository_dispatch:
+    types:
+      - worker-image-published
+      - dagster-agent-image-published
 
 permissions:
   id-token: write
@@ -47,12 +51,43 @@ jobs:
           terraform_version: 1.13.0
 
       - name: Select environment
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CLIENT_TF_ENV: ${{ github.event.client_payload.tf_env }}
         run: |
-          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
+          if [[ "$EVENT_NAME" == "repository_dispatch" ]]; then
+            if [[ -n "$CLIENT_TF_ENV" ]]; then
+              echo "TF_ENV=$CLIENT_TF_ENV" >> $GITHUB_ENV
+            else
+              echo "TF_ENV=prod" >> $GITHUB_ENV
+            fi
+          elif [[ "${GITHUB_REF##*/}" == "main" ]]; then
             echo "TF_ENV=prod" >> $GITHUB_ENV
           else
             echo "TF_ENV=dev" >> $GITHUB_ENV
           fi
+
+      - name: Capture dispatched worker image tag
+        if: github.event_name == 'repository_dispatch' && github.event.action == 'worker-image-published'
+        env:
+          IMAGE_TAG: ${{ github.event.client_payload.image_tag }}
+        run: |
+          if [[ -z "$IMAGE_TAG" ]]; then
+            echo "client_payload.image_tag is required for repository_dispatch events" >&2
+            exit 1
+          fi
+          echo "CONFLUXDB_CODE_IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Capture dispatched agent image tag
+        if: github.event_name == 'repository_dispatch' && github.event.action == 'dagster-agent-image-published'
+        env:
+          IMAGE_TAG: ${{ github.event.client_payload.image_tag }}
+        run: |
+          if [[ -z "$IMAGE_TAG" ]]; then
+            echo "client_payload.image_tag is required for repository_dispatch events" >&2
+            exit 1
+          fi
+          echo "DAGSTER_AGENT_IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Build runtime tfvars (no repo tfvars)
         run: |
@@ -117,11 +152,11 @@ jobs:
         run: terraform show -no-color tfplan >> $GITHUB_STEP_SUMMARY
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'repository_dispatch' && (github.event.action == 'worker-image-published' || github.event.action == 'dagster-agent-image-published')) }}
         run: terraform apply -auto-approve tfplan
 
       - name: Set Dagster agent token in Secrets Manager (post-apply)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.DAGSTER_AGENT_TOKEN != ''
+        if: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'repository_dispatch' && (github.event.action == 'worker-image-published' || github.event.action == 'dagster-agent-image-published'))) && env.DAGSTER_AGENT_TOKEN != '' }}
         run: |
           aws secretsmanager put-secret-value \
             --secret-id "confluxdb/${TF_ENV}/dagster_agent_token" \
