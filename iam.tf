@@ -283,7 +283,10 @@ data "aws_iam_policy_document" "oidc_assume_agent" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.github_org}/${var.github_agent_repo}:ref:refs/heads/${var.github_ci_branch}"]
+      values   = [
+        "repo:${local.github_org}/${var.github_agent_repo}:ref:refs/heads/${var.github_ci_branch}",
+        "repo:${local.github_org}/${var.github_agent_repo}:environment:prod"
+      ]
     }
   }
 }
