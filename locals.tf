@@ -11,7 +11,7 @@ locals {
   # Use two Availability Zones to satisfy RDS subnet group AZ coverage
   availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
   vpc_cidr           = "10.0.0.0/16"
-  github_org         = "michael-esdege"
+  github_org         = "EsdegeReigersdaal"
   github_repo        = "confluxdb-tf-aws"
 
   ecr_lifecycle_policy = jsonencode({
