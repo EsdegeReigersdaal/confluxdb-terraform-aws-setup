@@ -1,6 +1,7 @@
-# -----------------------------------------------------------------------------
-# RDS: PostgreSQL (private)
-# -----------------------------------------------------------------------------
+# Relational database resources.
+# Provisions the private PostgreSQL database and its supporting subnet group.
+
+# Defines the database subnet group so RDS stays within the private subnets.
 resource "aws_db_subnet_group" "rds" {
   name       = "${local.project_name}-${local.environment}-rds-sng"
   subnet_ids = module.vpc.database_subnets
@@ -10,10 +11,7 @@ resource "aws_db_subnet_group" "rds" {
   }
 }
 
-# -----------------------------------------------------------------------------
-# AWS RDS PostgreSQL Database
-# Creates a secure, private database for the data platform.
-# -----------------------------------------------------------------------------
+# Manages the PostgreSQL instance with backups, monitoring, and IAM-integrated credentials.
 module "rds" {
   source  = "terraform-aws-modules/rds/aws"
   version = "6.12.0"

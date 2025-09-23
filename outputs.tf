@@ -1,6 +1,6 @@
-# -----------------------------------------------------------------------------
-# Root Outputs
-# -----------------------------------------------------------------------------
+# Output values that expose important resource identifiers.
+# Surfaces key identifiers for networking, ECS services, ECR repositories, and IAM roles used by ConfluxDB automation.
+
 output "vpc_id" {
   description = "The ID of the VPC."
   value       = module.vpc.vpc_id

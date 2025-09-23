@@ -1,6 +1,7 @@
-# -----------------------------------------------------------------------------
-# Security Groups
-# -----------------------------------------------------------------------------
+# Security group definitions.
+# Defines ingress and egress rules for endpoints, ECS services, and the database.
+
+# Restricts VPC interface endpoints to HTTPS traffic from inside the network.
 module "vpc_endpoint_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "5.3.0"
@@ -31,6 +32,7 @@ module "vpc_endpoint_sg" {
 
 }
 
+# Grants the ECS agent and workers outbound access while blocking unsolicited ingress.
 module "app_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "5.3.0"
@@ -49,6 +51,7 @@ module "app_sg" {
   ]
 }
 
+# Enables internal gRPC traffic between the agent service and worker code servers.
 resource "aws_security_group_rule" "app_sg_allow_internal_code_server" {
   description              = "Allow Dagster agent to reach worker code servers on gRPC port"
   type                     = "ingress"
@@ -59,10 +62,7 @@ resource "aws_security_group_rule" "app_sg_allow_internal_code_server" {
   source_security_group_id = module.app_sg.security_group_id
 }
 
-# -----------------------------------------------------------------------------
-# Security Group for the RDS Database (This remains the same)
-# Allows traffic only from the application's security group on the PostgreSQL port.
-# -----------------------------------------------------------------------------
+# Limits database connectivity to the application security group.
 module "rds_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "5.3.0"

@@ -1,6 +1,7 @@
-# -----------------------------------------------------------------------------
-# ECR repositories
-# -----------------------------------------------------------------------------
+# Container registries for images.
+# Manages ECR repositories for the worker code and Dagster agent images.
+
+# Hosts versioned worker images and retires old untagged layers.
 module "ecr_confluxdb_code" {
   source  = "terraform-aws-modules/ecr/aws"
   version = "3.0.1"
@@ -12,7 +13,7 @@ module "ecr_confluxdb_code" {
   repository_image_scan_on_push = true
 }
 
-# Repository for Dagster agent image
+# Stores the Dagster agent image consumed by the control-plane service.
 module "ecr_dagster" {
   source  = "terraform-aws-modules/ecr/aws"
   version = "3.0.1"

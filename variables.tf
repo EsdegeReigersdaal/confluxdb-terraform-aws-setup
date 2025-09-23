@@ -1,6 +1,7 @@
-############################
-# ECS / Dagster variables
-############################
+# Input variables for this module.
+# Centralizes tunable inputs for compute sizing, credentials, and automation integration.
+
+# Configures the Dagster agent compute profile, image version, and environment overrides.
 
 variable "dagster_agent_cpu" {
   description = "vCPU units for the Dagster agent task (valid Fargate value)"
@@ -36,8 +37,9 @@ variable "dagster_agent_env" {
 variable "dagster_agent_secrets" {
   description = "Secrets to inject into the Dagster agent container"
   type = list(object({
-    name       = string
-    value_from = string # ARN of Secrets Manager secret or SSM parameter
+    name = string
+    # Accepts the ARN for the secret or parameter injected into the container.
+    value_from = string
   }))
   default = []
 }
@@ -48,9 +50,7 @@ variable "dagster_agent_log_retention_days" {
   default     = 14
 }
 
-############################
-# Worker task variables
-############################
+# Tunes worker task sizing, images, and secret injection.
 
 variable "confluxdb_code_image_tag" {
   description = "Image tag for the ConfluxDB worker code image (Dagster+Meltano+SQLMesh)"
@@ -79,8 +79,9 @@ variable "worker_env" {
 variable "worker_secrets" {
   description = "Secrets to inject into the worker container"
   type = list(object({
-    name       = string
-    value_from = string # ARN of Secrets Manager secret or SSM parameter
+    name = string
+    # Accepts the ARN for the secret or parameter injected into the container.
+    value_from = string
   }))
   default = []
 }
@@ -91,9 +92,7 @@ variable "worker_log_retention_days" {
   default     = 14
 }
 
-############################
-# IAM policy configuration
-############################
+# Allows optional IAM policies to be attached for worker data access.
 
 variable "worker_task_role_policy_arns" {
   description = "List of managed policy ARNs to attach to the worker task role for data access (e.g., S3, Glue)"
@@ -101,7 +100,7 @@ variable "worker_task_role_policy_arns" {
   default     = []
 }
 
-# Managed Secrets (created by Terraform) to inject into agent/worker
+# Defines Terraform-managed secrets that are provisioned and wired into containers.
 variable "agent_managed_secrets" {
   description = "Map of agent secret env var names to metadata and optional initial values. Stored at <project>/<env>/agent/<ENV_VAR_NAME>"
   type = map(object({
@@ -120,9 +119,7 @@ variable "worker_managed_secrets" {
   default = {}
 }
 
-############################
-# Secrets variables
-############################
+# Controls creation and population of the Dagster agent token secret.
 
 variable "create_dagster_agent_token_secret" {
   description = "Create a Secrets Manager secret for the Dagster Cloud agent token and wire it into the agent container"
@@ -136,9 +133,7 @@ variable "dagster_agent_token_value" {
   default     = null
   sensitive   = true
 }
-############################
-# Core variables
-############################
+# Establishes global AWS region and environment naming defaults.
 
 variable "aws_region" {
   description = "AWS region for all resources"
@@ -152,9 +147,7 @@ variable "environment" {
   default     = "prod"
 }
 
-############################
-# Dagster Cloud runtime config
-############################
+# Targets the correct Dagster Cloud organization, deployment, and URL.
 
 variable "dagster_cloud_organization" {
   description = "Dagster Cloud organization slug (DAGSTER_CLOUD_ORGANIZATION)"
@@ -180,9 +173,7 @@ variable "dagster_cloud_branch_deployments" {
   default     = false
 }
 
-############################
-# CI/CD repo config (agent/worker)
-############################
+# Identifies the GitHub repositories allowed to assume CI roles.
 
 variable "github_agent_repo" {
   description = "GitHub repository NAME (without org) for the Dagster agent image CI (e.g., 'dagster-agent')."
@@ -202,9 +193,7 @@ variable "github_ci_branch" {
   default     = "main"
 }
 
-############################
-# Ops toggles
-############################
+# Enables or disables optional infrastructure features.
 
 variable "enable_vpc_endpoints" {
   description = "Enable interface VPC endpoints (ECR API/DKR, ECS, Secrets Manager). S3 Gateway endpoint remains enabled regardless."

@@ -1,6 +1,6 @@
-# -----------------------------------------------------------------------------
-# VPC and Subnets
-# -----------------------------------------------------------------------------
+# Network foundation for the platform.
+# Builds the VPC, subnet tiers, NAT gateway, and flow logging for ConfluxDB.
+
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "6.0.1"

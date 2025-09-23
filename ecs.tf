@@ -1,9 +1,8 @@
-############################################
-# ECS Cluster, Dagster Agent, and Worker TD
-############################################
+# ECS orchestration resources.
+# Configures the ECS cluster, Dagster agent service, and worker tasks that run ConfluxDB workloads.
 
 locals {
-  # If a managed secret for the agent token exists, automatically pass it to the container
+  # Injects the optional Dagster agent token secret whenever Terraform provisions it.
   dagster_agent_token_secret_entries = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? [
     {
       name      = "DAGSTER_CLOUD_AGENT_TOKEN"
@@ -11,11 +10,11 @@ locals {
     }
   ] : []
 
-  # Managed secrets created via variables for agent/worker
+  # Converts Terraform-managed secrets into the ECS secrets format.
   agent_managed_secret_entries  = [for k, s in aws_secretsmanager_secret.agent_managed : { name = k, valueFrom = s.arn }]
   worker_managed_secret_entries = [for k, s in aws_secretsmanager_secret.worker_managed : { name = k, valueFrom = s.arn }]
 
-  # Base Dagster Cloud runtime env for both agent and worker
+  # Seeds the agent and workers with shared Dagster Cloud identifiers.
   dagster_base_env = {
     DAGSTER_CLOUD_ORGANIZATION = var.dagster_cloud_organization
     DAGSTER_CLOUD_DEPLOYMENT   = var.dagster_cloud_deployment
@@ -25,10 +24,10 @@ locals {
   dagster_api_env           = local.dagster_cloud_url_trimmed != null && local.dagster_cloud_url_trimmed != "" ? { DAGSTER_CLOUD_API_URL = local.dagster_cloud_url_trimmed } : {}
   dagster_branch_env        = { DAGSTER_CLOUD_BRANCH_DEPLOYMENTS = tostring(var.dagster_cloud_branch_deployments) }
 
-  # DAGSTER_HOME for agent writable path (overridable via dagster_agent_env)
+  # Sets a writable DAGSTER_HOME mount so the agent can persist runtime state.
   dagster_home_env = { DAGSTER_HOME = "/opt/dagster/dagster_home" }
 
-  # ECS-runner wiring for the agent (cluster, subnets, SG, worker family, region)
+  # Exposes the networking and IAM details the agent needs to launch worker tasks.
   dagster_agent_ecs_env = {
     DAGSTER_ECS_CLUSTER                = aws_ecs_cluster.cluster.name
     DAGSTER_ECS_SUBNET_1               = module.vpc.private_subnets[0]
@@ -44,7 +43,7 @@ locals {
     DAGSTER_CLOUD_AGENT_CPU_LIMIT      = tostring(var.dagster_agent_cpu)
   }
 
-  # Final env maps (user-provided maps take precedence and can override)
+  # Merges base environment values with any user-provided overrides.
   dagster_agent_env_final = merge(
     local.dagster_base_env,
     local.dagster_url_env,
@@ -56,7 +55,7 @@ locals {
   )
   worker_env_final = merge(local.dagster_base_env, local.dagster_url_env, var.worker_env)
 
-  # Startup command to write dagster.yaml at runtime (for official manual provisioning Option A)
+  # Bootstraps dependencies and writes dagster.yaml before the agent starts.
   dagster_agent_startup_command = <<-EOT
     set -eu
     mkdir -p "$DAGSTER_HOME"
@@ -104,13 +103,13 @@ resource "aws_ecs_cluster" "cluster" {
   name = "${local.project_name}-${local.environment}-ecs"
 }
 
-# CloudWatch logs for the agent container
+# Retains Dagster agent logs in CloudWatch for operational visibility.
 resource "aws_cloudwatch_log_group" "ecs_agent" {
   name              = "/aws/ecs/${local.project_name}-${local.environment}/agent"
   retention_in_days = var.dagster_agent_log_retention_days
 }
 
-# Dagster agent task definition (service)
+# Defines the Fargate task that hosts the long-running Dagster agent.
 resource "aws_ecs_task_definition" "dagster_agent" {
   lifecycle {
     ignore_changes = [container_definitions]
@@ -127,7 +126,7 @@ resource "aws_ecs_task_definition" "dagster_agent" {
     size_in_gib = 21
   }
 
-  # Named ephemeral volume to mount as DAGSTER_HOME
+  # Provides ephemeral storage backing the agent DAGSTER_HOME path.
   volume {
     name = "dagster-home"
   }
@@ -169,7 +168,7 @@ resource "aws_ecs_task_definition" "dagster_agent" {
   ])
 }
 
-# Dagster agent ECS service
+# Runs the Dagster agent task definition inside the ECS cluster.
 resource "aws_ecs_service" "dagster_agent" {
   name                   = "${local.project_name}-${local.environment}-dagster-agent"
   cluster                = aws_ecs_cluster.cluster.id
@@ -189,13 +188,13 @@ resource "aws_ecs_service" "dagster_agent" {
   }
 }
 
-# CloudWatch logs for worker tasks
+# Captures Fargate worker task logs for troubleshooting and auditing.
 resource "aws_cloudwatch_log_group" "ecs_worker" {
   name              = "/aws/ecs/${local.project_name}-${local.environment}/worker"
   retention_in_days = var.worker_log_retention_days
 }
 
-# Ephemeral worker task definition used by the agent via RunTask
+# Describes the on-demand worker task invoked by the agent for job execution.
 resource "aws_ecs_task_definition" "worker" {
   family                   = "${local.project_name}-${local.environment}-worker"
   requires_compatibilities = ["FARGATE"]

@@ -1,7 +1,7 @@
-############################################
-# Secrets Manager: Dagster Agent Token
-############################################
+# Secrets Manager resources.
+# Provisions Secrets Manager entries for the Dagster agent token and other runtime credentials.
 
+# Creates the optional Dagster Cloud agent token secret.
 resource "aws_secretsmanager_secret" "dagster_agent_token" {
   count = var.create_dagster_agent_token_secret ? 1 : 0
 
@@ -15,6 +15,7 @@ resource "aws_secretsmanager_secret" "dagster_agent_token" {
   }
 }
 
+# Stores the provided agent token value when supplied.
 resource "aws_secretsmanager_secret_version" "dagster_agent_token" {
   count = var.create_dagster_agent_token_secret && var.dagster_agent_token_value != null ? 1 : 0
 
@@ -22,6 +23,7 @@ resource "aws_secretsmanager_secret_version" "dagster_agent_token" {
   secret_string = var.dagster_agent_token_value
 }
 
+# Creates agent-specific secrets defined in Terraform variables.
 resource "aws_secretsmanager_secret" "agent_managed" {
   for_each = var.agent_managed_secrets
 
@@ -35,6 +37,7 @@ resource "aws_secretsmanager_secret" "agent_managed" {
   }
 }
 
+# Seeds agent managed secrets with initial values when provided.
 resource "aws_secretsmanager_secret_version" "agent_managed" {
   for_each = { for k, v in var.agent_managed_secrets : k => v if try(v.value, null) != null }
 
@@ -42,6 +45,7 @@ resource "aws_secretsmanager_secret_version" "agent_managed" {
   secret_string = each.value.value
 }
 
+# Creates worker secrets requested in configuration.
 resource "aws_secretsmanager_secret" "worker_managed" {
   for_each = var.worker_managed_secrets
 
@@ -55,6 +59,7 @@ resource "aws_secretsmanager_secret" "worker_managed" {
   }
 }
 
+# Writes initial payloads to worker secrets when provided.
 resource "aws_secretsmanager_secret_version" "worker_managed" {
   for_each = { for k, v in var.worker_managed_secrets : k => v if try(v.value, null) != null }
 

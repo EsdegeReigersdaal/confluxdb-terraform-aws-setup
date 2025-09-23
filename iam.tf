@@ -1,14 +1,17 @@
-# ##############################################################################
-# SECTION 1: GITHUB ACTIONS OIDC (for CI/CD)
-# ##############################################################################
-# Provides AWS credentials to the GitHub Actions workflow for deploying code.
+# Identity and access management resources.
+# Establishes roles, policies, and federated identities for CI/CD and ECS workloads.
 
+# Federates GitHub Actions via OIDC so CI runs can assume AWS roles.
+# Grants the Terraform pipeline access to AWS through short-lived credentials.
+
+# Registers the GitHub Actions identity provider for web identity federation.
 resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
   tags           = { Name = "GitHub Actions OIDC Provider" }
 }
 
+# Defines the role assumed by the Terraform workflow running in GitHub Actions.
 resource "aws_iam_role" "github_actions" {
   name = "${local.project_name}-${local.environment}-GithubActionsRole"
 
@@ -23,6 +26,7 @@ resource "aws_iam_role" "github_actions" {
   })
 }
 
+# Attaches a policy that lets CI push images and update ECS services.
 resource "aws_iam_policy" "github_actions_policy" {
   name        = "${local.project_name}-${local.environment}-GithubActionsPolicy"
   description = "Allows Github Actions to push images to ECR and update the Dagster Agent service."
@@ -30,7 +34,7 @@ resource "aws_iam_policy" "github_actions_policy" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # Allows pushing the user-code image to any ECR repository in the account
+      # Authorizes GitHub Actions to push images into account ECR repositories.
       {
         Effect = "Allow"
         Action = [
@@ -53,10 +57,9 @@ resource "aws_iam_role_policy_attachment" "github_actions_attach" {
   policy_arn = aws_iam_policy.github_actions_policy.arn
 }
 
-# ##############################################################################
-# SECTION 2: ECS TASK ROLES (Agent + Worker) AND EXECUTION ROLE
-# ##############################################################################
+# Defines execution and task roles powering the Dagster agent and worker tasks.
 
+# Aggregates the secret ARNs referenced by the ECS execution and task roles.
 locals {
   agent_secret_arns          = [for s in var.dagster_agent_secrets : s.value_from]
   worker_secret_arns         = [for s in var.worker_secrets : s.value_from]
@@ -72,7 +75,7 @@ locals {
   )
 }
 
-# Execution role shared by agent + worker tasks
+# Provides the shared execution role used for image pulls, logging, and secret access.
 data "aws_iam_policy_document" "ecs_task_exec_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -83,6 +86,7 @@ data "aws_iam_policy_document" "ecs_task_exec_assume" {
   }
 }
 
+# Creates the execution role that allows ECS tasks to pull images and write logs.
 resource "aws_iam_role" "ecs_task_execution_role" {
   name               = "${local.project_name}-${local.environment}-ecs-exec-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_exec_assume.json
@@ -94,7 +98,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_exec_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Allow the execution role to retrieve any injected secrets (if provided)
+# Adds an inline policy so the execution role can read container secrets when needed.
 resource "aws_iam_role_policy" "ecs_task_exec_secrets" {
   count = length(local.task_exec_secret_arns) > 0 ? 1 : 0
 
@@ -112,7 +116,7 @@ resource "aws_iam_role_policy" "ecs_task_exec_secrets" {
   })
 }
 
-# Task role for the Dagster agent (needs to run ECS tasks and pass roles)
+# Defines the trust policy that allows the agent task to assume its IAM role.
 data "aws_iam_policy_document" "dagster_agent_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -123,6 +127,7 @@ data "aws_iam_policy_document" "dagster_agent_assume" {
   }
 }
 
+# Grants the agent task permissions to run ECS operations and pass IAM roles.
 resource "aws_iam_role" "dagster_agent_task_role" {
   name               = "${local.project_name}-${local.environment}-dagster-agent-task-role"
   assume_role_policy = data.aws_iam_policy_document.dagster_agent_assume.json
@@ -218,7 +223,7 @@ resource "aws_iam_role_policy" "dagster_agent_ecs_control" {
   })
 }
 
-# Task role assumed by ephemeral worker tasks
+# Defines the trust policy that allows worker tasks to assume their IAM role.
 data "aws_iam_policy_document" "worker_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -229,6 +234,7 @@ data "aws_iam_policy_document" "worker_assume" {
   }
 }
 
+# Grants worker tasks the permissions needed for data platform activities.
 resource "aws_iam_role" "confluxdb_worker_task_role" {
   name               = "${local.project_name}-${local.environment}-worker-task-role"
   assume_role_policy = data.aws_iam_policy_document.worker_assume.json
@@ -252,18 +258,16 @@ resource "aws_iam_role_policy" "worker_agent_token_secret_access" {
   })
 }
 
-# Optional: attach additional managed policies to the worker task role (e.g., S3 access)
+# Optionally attaches additional managed policies for worker data access.
 resource "aws_iam_role_policy_attachment" "worker_attach" {
   for_each   = { for arn in var.worker_task_role_policy_arns : arn => arn }
   role       = aws_iam_role.confluxdb_worker_task_role.name
   policy_arn = each.value
 }
 
-################################################################################
-# SECTION 3: CI ROLES FOR APP REPOS (Agent + Worker)
-################################################################################
+# Provisions CI roles for the application repositories that publish images and task definitions.
 
-# Trust policy helpers
+# Supplies helper policy documents used in the role assumption statements.
 data "aws_iam_policy_document" "oidc_assume_agent" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -304,24 +308,23 @@ data "aws_iam_policy_document" "oidc_assume_worker" {
   }
 }
 
-# Role assumed by the Dagster Agent image repo CI to push to ECR and deploy ECS
+# Defines the CI role for the agent image repository so it can publish artifacts and deploy services.
 resource "aws_iam_role" "app_repo_agent_ci" {
   name               = "${local.project_name}-${local.environment}-agent-ci-role"
   assume_role_policy = data.aws_iam_policy_document.oidc_assume_agent.json
   description        = "CI role for agent repo to push ECR and deploy ECS service"
 }
 
-# Role assumed by the Worker code image repo CI to push to ECR and register TDs
+# Defines the CI role for the worker code repository to publish images and register task definitions.
 resource "aws_iam_role" "app_repo_worker_ci" {
   name               = "${local.project_name}-${local.environment}-worker-ci-role"
   assume_role_policy = data.aws_iam_policy_document.oidc_assume_worker.json
   description        = "CI role for worker repo to push ECR and register ECS task defs"
 }
 
-# ---------------------------
-# Agent CI permissions
-# ---------------------------
+# Attaches policies that grant the agent CI permissions for ECR, ECS updates, and PassRole.
 
+# Allows the agent CI pipeline to publish images to the agent ECR repository.
 resource "aws_iam_policy" "agent_ci_ecr_push" {
   name        = "${local.project_name}-${local.environment}-agent-ci-ecr-push"
   description = "Allow pushing to the Dagster agent ECR repo"
@@ -354,6 +357,7 @@ resource "aws_iam_policy" "agent_ci_ecr_push" {
   })
 }
 
+# Permits the agent CI job to update ECS services and describe cluster state.
 resource "aws_iam_policy" "agent_ci_ecs_deploy" {
   name        = "${local.project_name}-${local.environment}-agent-ci-ecs-deploy"
   description = "Allow registering task defs and updating the Dagster agent service"
@@ -380,6 +384,7 @@ resource "aws_iam_policy" "agent_ci_ecs_deploy" {
   })
 }
 
+# Allows the agent CI pipeline to pass the ECS execution and task roles during deploys.
 resource "aws_iam_policy" "agent_ci_passrole" {
   name        = "${local.project_name}-${local.environment}-agent-ci-passrole"
   description = "Allow passing required IAM roles when registering TDs"
@@ -416,10 +421,9 @@ resource "aws_iam_role_policy_attachment" "agent_ci_attach_passrole" {
   policy_arn = aws_iam_policy.agent_ci_passrole.arn
 }
 
-# ---------------------------
-# Worker CI permissions
-# ---------------------------
+# Attaches policies that grant the worker CI permissions for ECR publishing and task registration.
 
+# Allows the worker CI pipeline to push code images to its dedicated ECR repository.
 resource "aws_iam_policy" "worker_ci_ecr_push" {
   name        = "${local.project_name}-${local.environment}-worker-ci-ecr-push"
   description = "Allow pushing to the worker code ECR repo"
@@ -452,6 +456,7 @@ resource "aws_iam_policy" "worker_ci_ecr_push" {
   })
 }
 
+# Grants the worker CI pipeline ability to register and describe task definitions.
 resource "aws_iam_policy" "worker_ci_register_td" {
   name        = "${local.project_name}-${local.environment}-worker-ci-register-td"
   description = "Allow describing and registering worker task definitions"
@@ -471,6 +476,7 @@ resource "aws_iam_policy" "worker_ci_register_td" {
   })
 }
 
+# Permits the worker CI pipeline to pass execution and task roles to ECS.
 resource "aws_iam_policy" "worker_ci_passrole" {
   name        = "${local.project_name}-${local.environment}-worker-ci-passrole"
   description = "Allow passing required IAM roles when registering worker TDs"
@@ -492,6 +498,7 @@ resource "aws_iam_policy" "worker_ci_passrole" {
   })
 }
 
+# Optionally allows the worker CI pipeline to read the Dagster agent token secret during deploys.
 resource "aws_iam_policy" "worker_ci_agent_token_secret_access" {
   count = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? 1 : 0
 

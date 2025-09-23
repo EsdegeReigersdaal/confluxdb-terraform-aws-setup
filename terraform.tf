@@ -1,6 +1,6 @@
-# -----------------------------------------------------------------------------
-# Terraform Settings
-# -----------------------------------------------------------------------------
+# Terraform core configuration for this platform.
+# Pins the Terraform CLI version and required providers used by ConfluxDB.
+
 terraform {
   required_version = "~> 1.13.0"
 

@@ -1,6 +1,5 @@
-# -----------------------------------------------------------------------------
-# Cloud Map namespace for Dagster ECS code servers
-# -----------------------------------------------------------------------------
+# Service discovery configuration.
+# Creates a Cloud Map namespace so the agent can discover worker services.
 
 resource "aws_service_discovery_private_dns_namespace" "dagster" {
   name        = "dagster-agent-${local.project_name}-${local.environment}.local"

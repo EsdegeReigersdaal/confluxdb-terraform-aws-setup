@@ -1,6 +1,7 @@
-# -----------------------------------------------------------------------------
-# VPC Endpoints for private ECS/ECR/Logs/Secrets access
-# -----------------------------------------------------------------------------
+# VPC endpoints for private service access.
+# Provides private connectivity to AWS services required by the ECS platform.
+
+# Configures the S3 gateway endpoint and optional interface endpoints for private access.
 module "endpoints" {
   source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
   version = "6.0.1"
