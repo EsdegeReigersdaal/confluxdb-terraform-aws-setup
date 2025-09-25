@@ -37,3 +37,4 @@ override.tf.json
 terraform.rc
 
 build/
+layers/db_api/python/
