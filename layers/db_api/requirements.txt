@@ -1,0 +1,4 @@
+pg8000==1.30.5
+scramp==1.4.6
+asn1crypto==1.5.1
+python-dateutil==2.9.0.post0

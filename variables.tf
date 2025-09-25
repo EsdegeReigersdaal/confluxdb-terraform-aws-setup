@@ -200,3 +200,21 @@ variable "enable_vpc_endpoints" {
   type        = bool
   default     = false
 }
+variable "db_api_allowed_source_ips" {
+  description = "List of IPv4 addresses allowed to invoke the data API. Set via TF_VAR_db_api_allowed_source_ips (e.g., in a GitHub environment variable)."
+  type        = list(string)
+  default     = []
+}
+
+variable "db_api_resource_prefix" {
+  description = "Base schema/table path required in the data API resource header (e.g., public/diensten)."
+  type        = string
+  default     = "public/diensten"
+}
+
+variable "db_api_auth_key_value" {
+  description = "Optional initial value for the data API authentication key. Supply via TF_VAR_db_api_auth_key_value (for example by mapping a GitHub environment secret)."
+  type        = string
+  default     = null
+  sensitive   = true
+}

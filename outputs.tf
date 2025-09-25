@@ -100,3 +100,28 @@ output "service_discovery_namespace_name" {
   description = "Cloud Map private DNS namespace name"
   value       = aws_service_discovery_private_dns_namespace.dagster.name
 }
+
+output "db_proxy_endpoint" {
+  description = "Endpoint DNS name for the RDS Proxy"
+  value       = aws_db_proxy.db.endpoint
+}
+
+output "db_proxy_arn" {
+  description = "ARN of the RDS Proxy"
+  value       = aws_db_proxy.db.arn
+}
+
+output "db_api_invoke_url" {
+  description = "Invoke URL for the Lambda-backed data API"
+  value       = aws_apigatewayv2_stage.db.invoke_url
+}
+
+output "db_api_lambda_function_name" {
+  description = "Name of the Lambda function that fronts the RDS instance"
+  value       = aws_lambda_function.db_api.function_name
+}
+
+output "db_api_auth_secret_arn" {
+  description = "Secrets Manager ARN holding the data API authentication key"
+  value       = aws_secretsmanager_secret.db_api_auth.arn
+}
