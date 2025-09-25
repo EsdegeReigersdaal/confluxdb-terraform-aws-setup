@@ -66,3 +66,22 @@ resource "aws_secretsmanager_secret_version" "worker_managed" {
   secret_id     = aws_secretsmanager_secret.worker_managed[each.key].id
   secret_string = each.value.value
 }
+
+# API authentication secret for the data API key.
+resource "aws_secretsmanager_secret" "db_api_auth" {
+  name        = "${local.project_name}/${local.environment}/db_api/auth_key"
+  description = "API key required to call the ConfluxDB data API"
+
+  tags = {
+    Name        = "${local.project_name}-${local.environment}-db-api-auth-key"
+    Project     = local.project_name
+    Environment = local.environment
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "db_api_auth" {
+  count = var.db_api_auth_key_value != null ? 1 : 0
+
+  secret_id     = aws_secretsmanager_secret.db_api_auth.id
+  secret_string = var.db_api_auth_key_value
+}
