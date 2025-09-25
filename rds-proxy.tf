@@ -19,11 +19,6 @@ resource "aws_iam_role" "rds_proxy" {
   description        = "IAM role that lets RDS Proxy read database credentials"
 }
 
-resource "aws_iam_role_policy_attachment" "rds_proxy" {
-  role       = aws_iam_role.rds_proxy.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSProxyServiceRolePolicy"
-}
-
 resource "aws_db_proxy" "db" {
   name                   = "${local.project_name}-${local.environment}-db-proxy"
   debug_logging          = false

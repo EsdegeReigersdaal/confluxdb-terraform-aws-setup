@@ -31,6 +31,8 @@ jobs:
       WORKER_SECRETS_JSON: ${{ vars.WORKER_SECRETS_JSON }}
       WORKER_TASK_ROLE_POLICY_ARNS_JSON: ${{ vars.WORKER_TASK_ROLE_POLICY_ARNS_JSON }}
 
+      DB_API_AUTH_KEY_SECRET: ${{ secrets.DB_API_AUTH_KEY_SECRET }}
+      DB_API_ALLOWED_SOURCE_IPS: ${{ vars.DB_API_ALLOWED_SOURCE_IPS }}
     defaults:
       run:
         shell: bash
@@ -136,6 +138,19 @@ jobs:
 
               pathlib.Path("runtime.auto.tfvars.json").write_text(json.dumps(config, indent=2) + "\n")
           PY
+
+      - name: Install Lambda layer dependencies
+        run: |
+          pip install -r layers/db_api/requirements.txt -t layers/db_api/python
+
+      - name: Export API settings
+        run: |
+          if [[ -n "$DB_API_AUTH_KEY_SECRET" ]]; then
+            echo "TF_VAR_db_api_auth_key_value=$DB_API_AUTH_KEY_SECRET" >> $GITHUB_ENV
+          fi
+          if [[ -n "$DB_API_ALLOWED_SOURCE_IPS" ]]; then
+            echo "TF_VAR_db_api_allowed_source_ips=$DB_API_ALLOWED_SOURCE_IPS" >> $GITHUB_ENV
+          fi
 
       - name: Terraform Init
         run: terraform init -backend-config="environments/${TF_ENV}.backend.hcl" -reconfigure
