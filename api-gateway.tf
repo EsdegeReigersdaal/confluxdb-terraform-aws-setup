@@ -109,9 +109,104 @@ resource "aws_lambda_function" "db_api" {
   depends_on = [aws_cloudwatch_log_group.db_api_lambda]
 }
 
+data "archive_file" "db_api_authorizer_lambda" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambdas/db_authorizer"
+  output_path = "${path.module}/build/db-api-authorizer.zip"
+}
+
+data "aws_iam_policy_document" "db_api_authorizer_assume" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+data "aws_iam_policy_document" "db_api_authorizer_policy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = [
+      "arn:aws:logs:${local.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret"
+    ]
+    resources = [aws_secretsmanager_secret.db_api_auth.arn]
+  }
+}
+
+resource "aws_iam_role" "db_api_authorizer" {
+  name               = "${local.project_name}-${local.environment}-db-api-authorizer-role"
+  assume_role_policy = data.aws_iam_policy_document.db_api_authorizer_assume.json
+}
+
+resource "aws_iam_role_policy" "db_api_authorizer" {
+  name   = "${local.project_name}-${local.environment}-db-api-authorizer-inline"
+  role   = aws_iam_role.db_api_authorizer.id
+  policy = data.aws_iam_policy_document.db_api_authorizer_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "db_api_authorizer_basic" {
+  role       = aws_iam_role.db_api_authorizer.id
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_cloudwatch_log_group" "db_api_authorizer" {
+  name              = "/aws/lambda/${local.project_name}-${local.environment}-db-api-authorizer"
+  retention_in_days = 14
+}
+
+resource "aws_lambda_function" "db_api_authorizer" {
+  function_name = "${local.project_name}-${local.environment}-db-api-authorizer"
+  description   = "Authorizes access to the ConfluxDB data API"
+  role          = aws_iam_role.db_api_authorizer.arn
+  runtime       = "python3.12"
+  handler       = "handler.handler"
+
+  filename         = data.archive_file.db_api_authorizer_lambda.output_path
+  source_code_hash = data.archive_file.db_api_authorizer_lambda.output_base64sha256
+
+  timeout = 5
+
+  environment {
+    variables = {
+      API_KEY_SECRET_ARN = aws_secretsmanager_secret.db_api_auth.arn
+      ALLOWED_SOURCE_IPS = join(",", var.db_api_allowed_source_ips)
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.db_api_authorizer]
+}
+
 resource "aws_apigatewayv2_api" "db" {
   name          = "${local.project_name}-${local.environment}-db-api"
   protocol_type = "HTTP"
+}
+
+resource "aws_apigatewayv2_authorizer" "db_shared_secret" {
+  api_id                            = aws_apigatewayv2_api.db.id
+  authorizer_type                   = "REQUEST"
+  authorizer_uri                    = format("arn:aws:apigateway:%s:lambda:path/2015-03-31/functions/%s/invocations", local.aws_region, aws_lambda_function.db_api_authorizer.arn)
+  authorizer_payload_format_version = "2.0"
+  enable_simple_responses           = true
+  identity_sources                  = ["$request.header.x-api-key"]
+  name                              = "${local.project_name}-${local.environment}-db-api-authorizer"
+
+  depends_on = [aws_lambda_permission.allow_authorizer]
 }
 
 resource "aws_apigatewayv2_integration" "db_lambda" {
@@ -122,10 +217,20 @@ resource "aws_apigatewayv2_integration" "db_lambda" {
   timeout_milliseconds   = 29000
 }
 
-resource "aws_apigatewayv2_route" "db_proxy" {
-  api_id    = aws_apigatewayv2_api.db.id
-  route_key = "ANY /{proxy+}"
-  target    = "integrations/${aws_apigatewayv2_integration.db_lambda.id}"
+resource "aws_apigatewayv2_route" "diensten_collection" {
+  api_id             = aws_apigatewayv2_api.db.id
+  route_key          = "GET /public/diensten"
+  target             = "integrations/${aws_apigatewayv2_integration.db_lambda.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.db_shared_secret.id
+}
+
+resource "aws_apigatewayv2_route" "diensten_item" {
+  api_id             = aws_apigatewayv2_api.db.id
+  route_key          = "GET /public/diensten/{identifier}"
+  target             = "integrations/${aws_apigatewayv2_integration.db_lambda.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.db_shared_secret.id
 }
 
 resource "aws_cloudwatch_log_group" "db_api_stage" {
@@ -151,6 +256,14 @@ resource "aws_apigatewayv2_stage" "db" {
       integrationStatus = "$context.integrationStatus"
     })
   }
+}
+
+resource "aws_lambda_permission" "allow_authorizer" {
+  statement_id  = "AllowExecutionFromApiGatewayAuthorizer"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.db_api_authorizer.arn
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.db.execution_arn}/authorizers/*"
 }
 
 resource "aws_lambda_permission" "allow_api_gateway" {
