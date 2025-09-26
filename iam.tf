@@ -66,12 +66,14 @@ locals {
   managed_secret_arns        = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? [aws_secretsmanager_secret.dagster_agent_token[0].arn] : []
   agent_managed_secret_arns  = [for k, s in aws_secretsmanager_secret.agent_managed : s.arn]
   worker_managed_secret_arns = [for k, s in aws_secretsmanager_secret.worker_managed : s.arn]
+  worker_db_secret_arns         = [module.rds.db_instance_master_user_secret_arn]
   task_exec_secret_arns = concat(
     local.agent_secret_arns,
     local.worker_secret_arns,
     local.managed_secret_arns,
     local.agent_managed_secret_arns,
     local.worker_managed_secret_arns,
+    local.worker_db_secret_arns,
   )
 }
 

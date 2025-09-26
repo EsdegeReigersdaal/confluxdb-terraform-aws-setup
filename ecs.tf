@@ -14,6 +14,20 @@ locals {
   agent_managed_secret_entries  = [for k, s in aws_secretsmanager_secret.agent_managed : { name = k, valueFrom = s.arn }]
   worker_managed_secret_entries = [for k, s in aws_secretsmanager_secret.worker_managed : { name = k, valueFrom = s.arn }]
 
+  worker_db_env = {
+    CONFLUXDB_DB_HOST     = aws_db_proxy.db.endpoint
+    CONFLUXDB_DB_PORT     = tostring(module.rds.db_instance_port)
+    CONFLUXDB_DB_NAME     = module.rds.db_instance_name
+    CONFLUXDB_DB_USERNAME = module.rds.db_instance_username
+  }
+
+  worker_db_secret_entries = [
+    {
+      name      = "CONFLUXDB_DB_PASSWORD"
+      valueFrom = "${module.rds.db_instance_master_user_secret_arn}:password::"
+    }
+  ]
+
   # Seeds the agent and workers with shared Dagster Cloud identifiers.
   dagster_base_env = {
     DAGSTER_CLOUD_ORGANIZATION = var.dagster_cloud_organization
@@ -53,7 +67,7 @@ locals {
     local.dagster_agent_ecs_env,
     var.dagster_agent_env,
   )
-  worker_env_final = merge(local.dagster_base_env, local.dagster_url_env, var.worker_env)
+  worker_env_final = merge(local.dagster_base_env, local.dagster_url_env, local.worker_db_env, var.worker_env)
 
   # Bootstraps dependencies and writes dagster.yaml before the agent starts.
   dagster_agent_startup_command = <<-EOT
@@ -215,7 +229,8 @@ resource "aws_ecs_task_definition" "worker" {
       environment = [for k, v in local.worker_env_final : { name = k, value = v }]
       secrets = concat(
         [for s in var.worker_secrets : { name = s.name, valueFrom = s.value_from }],
-        local.worker_managed_secret_entries
+        local.worker_managed_secret_entries,
+        local.worker_db_secret_entries
       )
 
       logConfiguration = {
