@@ -55,6 +55,10 @@ locals {
     AWS_REGION                         = local.aws_region
     DAGSTER_CLOUD_AGENT_MEMORY_LIMIT   = tostring(var.dagster_agent_memory)
     DAGSTER_CLOUD_AGENT_CPU_LIMIT      = tostring(var.dagster_agent_cpu)
+    DAGSTER_CLOUD_ECS_RUN_LAUNCHER__TASK_DEFINITION       = aws_ecs_task_definition.worker.arn
+    DAGSTER_CLOUD_ECS_RUN_LAUNCHER__CONTAINER_NAME        = "worker"
+    DAGSTER_CLOUD_ECS_USER_CODE_LAUNCHER__TASK_DEFINITION = aws_ecs_task_definition.worker.arn
+    DAGSTER_CLOUD_ECS_USER_CODE_LAUNCHER__CONTAINER_NAME  = "worker"
   }
 
   # Merges base environment values with any user-provided overrides.
