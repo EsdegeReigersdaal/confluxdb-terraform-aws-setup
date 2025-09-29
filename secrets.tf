@@ -67,6 +67,36 @@ resource "aws_secretsmanager_secret_version" "worker_managed" {
   secret_string = each.value.value
 }
 
+data "aws_secretsmanager_secret_version" "rds_master" {
+  secret_id = module.rds.db_instance_master_user_secret_arn
+}
+
+locals {
+  rds_master_secret = jsondecode(data.aws_secretsmanager_secret_version.rds_master.secret_string)
+}
+
+resource "aws_secretsmanager_secret" "db_connection" {
+  name        = "${local.environment}/confluxdb/connection"
+  description = "Postgres connection settings for ConfluxDB runtime"
+
+  tags = {
+    Name        = "${local.project_name}-${local.environment}-db-connection"
+    Project     = local.project_name
+    Environment = local.environment
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "db_connection" {
+  secret_id = aws_secretsmanager_secret.db_connection.id
+  secret_string = jsonencode({
+    host     = aws_db_proxy.db.endpoint
+    username = local.rds_master_secret["username"]
+    password = local.rds_master_secret["password"]
+    dbname   = module.rds.db_instance_name
+    port     = tostring(module.rds.db_instance_port)
+  })
+}
+
 # API authentication secret for the data API key.
 resource "aws_secretsmanager_secret" "db_api_auth" {
   name        = "${local.project_name}/${local.environment}/db_api/auth_key"
