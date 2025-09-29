@@ -51,18 +51,22 @@ Quick Start
     terraform plan -var-file=environments/prod.tfvars -out=tfplan
     terraform apply tfplan
 
-4) Set secret values (if not set in tfvars)
-   To avoid storing sensitive values in Terraform state, set them post-apply:
+4) Secrets
 
-    # Dagster agent token
-    aws secretsmanager put-secret-value \
-      --secret-id confluxdb/prod/dagster_agent_token \
-      --secret-string "<DAGSTER_CLOUD_AGENT_TOKEN>"
+   Terraform provisions the secrets required by the platform. After apply:
 
-    # Worker managed secrets examples
-    aws secretsmanager put-secret-value \
-      --secret-id confluxdb/prod/worker/MELTANO_API_KEY \
-      --secret-string "<meltano_api_key>"
+   - `prod/confluxdb/connection` (environment-specific) already contains the proxy endpoint, database name, username, password, and port consumed by the code worker via `require_postgres_credentials()`. No manual action required.
+   - If `create_dagster_agent_token_secret` is true and you did not supply `var.dagster_agent_token_value`, populate the agent token secret:
+
+        aws secretsmanager put-secret-value \
+          --secret-id confluxdb/prod/dagster_agent_token \
+          --secret-string "<DAGSTER_CLOUD_AGENT_TOKEN>"
+
+   - Entries declared in `agent_managed_secrets` or `worker_managed_secrets` are created empty so you can set them after apply:
+
+        aws secretsmanager put-secret-value \
+          --secret-id confluxdb/prod/worker/MELTANO_API_KEY \
+          --secret-string "<meltano_api_key>"
 
 Images
 ------
@@ -71,24 +75,27 @@ Images
 
 Secrets Management
 ------------------
-- Agent token secret (managed by TF): `confluxdb/prod/dagster_agent_token`
-- Managed secrets maps (created by TF):
-  - `agent_managed_secrets` → injected into agent container
-  - `worker_managed_secrets` → injected into worker container
-- Additional pre-existing secrets can be injected via `dagster_agent_secrets` and `worker_secrets` (provide ARNs).
+Terraform keeps the runtime credentials in Secrets Manager:
+
+- `prod/confluxdb/connection` - auto-populated Postgres connection secret consumed by the Dagster code worker and other integrations through the RDS proxy.
+- `confluxdb/<env>/dagster_agent_token` - optional secret for the Dagster Cloud agent token (populate if you do not pass `var.dagster_agent_token_value`).
+- `confluxdb/<env>/agent/<NAME>` and `confluxdb/<env>/worker/<NAME>` - placeholders created from `agent_managed_secrets` and `worker_managed_secrets`; set the values post-apply when needed.
+
+You can still reference existing secrets via `dagster_agent_secrets`. Worker tasks now fetch credentials at runtime; nothing is injected via the ECS task definition.
+
 
 Security Model
 --------------
 - App security group is applied to agent and worker tasks; DB SG only allows ingress from the app SG on port 5432.
 - ECS task execution role (pulls images, logs, reads secrets) is distinct from the task role used by your code.
 - Dagster agent task role has permission to `ecs:RunTask` and `iam:PassRole` for the worker/execution roles.
+- The RDS proxy IAM role has `secretsmanager:GetSecretValue` access to the master user secret so database sessions can authenticate.
 
 Key Variables (excerpt)
 -----------------------
 - `dagster_agent_cpu`, `dagster_agent_memory`, `dagster_agent_desired_count`
 - `confluxdb_code_image_tag`, `worker_cpu`, `worker_memory`
 - `dagster_agent_env`, `dagster_agent_secrets`
-- `worker_secrets`
 - `agent_managed_secrets`, `worker_managed_secrets`
 - `worker_task_role_policy_arns`
 
@@ -122,7 +129,6 @@ Variables (non-sensitive)
 | `CONFLUXDB_CODE_IMAGE_TAG` | string | `v1.0.0` | Tag for ConfluxDB worker image |
 | `AGENT_MANAGED_SECRETS_JSON` | JSON object | `{}` | Map of agent secret names to metadata (values set post-apply) |
 | `WORKER_MANAGED_SECRETS_JSON` | JSON object | `{}` | Map of worker secret names to metadata (values set post-apply) |
-| `WORKER_SECRETS_JSON` | JSON array | `[]` | List of pre-existing secret ARNs to inject (e.g., DB secret) |
 | `WORKER_TASK_ROLE_POLICY_ARNS_JSON` | JSON array | `[]` | List of managed policy ARNs to attach to worker task role |
 
 Secrets (sensitive)
@@ -133,18 +139,7 @@ Secrets (sensitive)
 
 JSON payload examples
 
-Worker pre-existing secrets (after first apply, paste RDS secret ARN):
-
-```
-WORKER_SECRETS_JSON = [
-  {
-    "name": "DATABASE_SECRET_ARN",
-    "value_from": "<paste terraform output rds_master_user_secret_arn>"
-  }
-]
-```
-
-Worker managed secrets to create (values set post-apply via AWS CLI):
+Worker managed secrets to create (values set post-apply via AWS CLI; retrieved at runtime by the workloads):
 
 ```
 WORKER_MANAGED_SECRETS_JSON = {
