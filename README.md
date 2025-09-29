@@ -4,7 +4,7 @@ ConfluxDB on AWS (Terraform)
 Infrastructure-as-Code for the ConfluxDB data platform on AWS. It provisions a secure, private-by-default environment with:
 
 - ECS Fargate cluster hosting a Dagster Hybrid agent in private subnets
-- Ephemeral worker task definition for Dagster/Meltano/SQLMesh jobs
+- Configuration for Dagster to launch ephemeral worker tasks via dynamic ECS task definitions
 - RDS PostgreSQL (private subnets, managed master user secret)
 - VPC with NAT and VPC Endpoints (ECR, ECS, Logs, Secrets Manager)
 - Security groups with least-privilege rules
@@ -25,7 +25,7 @@ Repository Layout
 - `endpoints.tf`: Interface/Gateway endpoints for private AWS access
 - `database.tf`: RDS PostgreSQL in private subnets, managed password
 - `ecr.tf`: ECR repositories for agent and worker images
-- `ecs.tf`: ECS cluster, Dagster agent service, worker task definition
+- `ecs.tf`: ECS cluster, Dagster agent service, runtime launch configuration for worker tasks
 - `iam.tf`: IAM OIDC (GitHub), ECS execution role, agent/worker roles
 - `secrets.tf`: Secrets Manager secrets (managed by Terraform)
 - `variables.tf`: Configuration knobs (CPU/memory, images, secrets)
@@ -103,7 +103,6 @@ Outputs
 -------
 - `ecs_cluster_name`: ECS cluster name
 - `ecs_dagster_agent_service_name`: Agent service name
-- `ecs_worker_task_definition_arn`: Worker task definition ARN
 - `rds_master_user_secret_arn`: RDS master user secret ARN
 - `app_security_group_id`: App SG ID
 - `dagster_agent_token_secret_arn`: Agent token secret ARN (if created)

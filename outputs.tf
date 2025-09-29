@@ -46,16 +46,6 @@ output "ecs_dagster_agent_service_name" {
   value       = aws_ecs_service.dagster_agent.name
 }
 
-output "ecs_worker_task_definition_arn" {
-  description = "ARN of the worker task definition used for ephemeral runs"
-  value       = aws_ecs_task_definition.worker.arn
-}
-
-output "ecs_worker_task_family" {
-  description = "Task definition family name for the worker (use in CI)"
-  value       = aws_ecs_task_definition.worker.family
-}
-
 output "app_security_group_id" {
   description = "Security group ID used by agent and worker tasks"
   value       = module.app_sg.security_group_id

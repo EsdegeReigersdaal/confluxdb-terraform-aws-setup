@@ -28,22 +28,17 @@ locals {
 
   # Exposes the networking and IAM details the agent needs to launch worker tasks.
   dagster_agent_ecs_env = {
-    DAGSTER_ECS_CLUSTER                                   = aws_ecs_cluster.cluster.name
-    DAGSTER_ECS_SUBNET_1                                  = module.vpc.private_subnets[0]
-    DAGSTER_ECS_SUBNET_2                                  = module.vpc.private_subnets[1]
-    DAGSTER_ECS_SECURITY_GROUP                            = module.app_sg.security_group_id
-    DAGSTER_ECS_WORKER_TASK_DEFINITION                    = aws_ecs_task_definition.worker.family
-    DAGSTER_ECS_EXECUTION_ROLE_ARN                        = aws_iam_role.ecs_task_execution_role.arn
-    DAGSTER_ECS_TASK_ROLE_ARN                             = aws_iam_role.confluxdb_worker_task_role.arn
-    DAGSTER_ECS_LOG_GROUP                                 = aws_cloudwatch_log_group.ecs_worker.name
-    DAGSTER_ECS_SD_NAMESPACE_ID                           = aws_service_discovery_private_dns_namespace.dagster.id
-    AWS_REGION                                            = local.aws_region
-    DAGSTER_CLOUD_AGENT_MEMORY_LIMIT                      = tostring(var.dagster_agent_memory)
-    DAGSTER_CLOUD_AGENT_CPU_LIMIT                         = tostring(var.dagster_agent_cpu)
-    DAGSTER_CLOUD_ECS_RUN_LAUNCHER__TASK_DEFINITION       = aws_ecs_task_definition.worker.arn
-    DAGSTER_CLOUD_ECS_RUN_LAUNCHER__CONTAINER_NAME        = "worker"
-    DAGSTER_CLOUD_ECS_USER_CODE_LAUNCHER__TASK_DEFINITION = aws_ecs_task_definition.worker.arn
-    DAGSTER_CLOUD_ECS_USER_CODE_LAUNCHER__CONTAINER_NAME  = "worker"
+    DAGSTER_ECS_CLUSTER              = aws_ecs_cluster.cluster.name
+    DAGSTER_ECS_SUBNET_1             = module.vpc.private_subnets[0]
+    DAGSTER_ECS_SUBNET_2             = module.vpc.private_subnets[1]
+    DAGSTER_ECS_SECURITY_GROUP       = module.app_sg.security_group_id
+    DAGSTER_ECS_EXECUTION_ROLE_ARN   = aws_iam_role.ecs_task_execution_role.arn
+    DAGSTER_ECS_TASK_ROLE_ARN        = aws_iam_role.confluxdb_worker_task_role.arn
+    DAGSTER_ECS_LOG_GROUP            = aws_cloudwatch_log_group.ecs_worker.name
+    DAGSTER_ECS_SD_NAMESPACE_ID      = aws_service_discovery_private_dns_namespace.dagster.id
+    AWS_REGION                       = local.aws_region
+    DAGSTER_CLOUD_AGENT_MEMORY_LIMIT = tostring(var.dagster_agent_memory)
+    DAGSTER_CLOUD_AGENT_CPU_LIMIT    = tostring(var.dagster_agent_cpu)
   }
 
   # Merges base environment values with any user-provided overrides.
@@ -194,37 +189,6 @@ resource "aws_ecs_service" "dagster_agent" {
 resource "aws_cloudwatch_log_group" "ecs_worker" {
   name              = "/aws/ecs/${local.project_name}-${local.environment}/worker"
   retention_in_days = var.worker_log_retention_days
-}
-
-# Describes the on-demand worker task invoked by the agent for job execution.
-resource "aws_ecs_task_definition" "worker" {
-  family                   = "${local.project_name}-${local.environment}-worker"
-  requires_compatibilities = ["FARGATE"]
-  network_mode             = "awsvpc"
-  cpu                      = var.worker_cpu
-  memory                   = var.worker_memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  task_role_arn            = aws_iam_role.confluxdb_worker_task_role.arn
-
-  container_definitions = jsonencode([
-    {
-      name      = "worker"
-      image     = "${module.ecr_confluxdb_code.repository_url}:${var.confluxdb_code_image_tag}"
-      essential = true
-      cpu       = var.worker_cpu
-      memory    = var.worker_memory
-
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.ecs_worker.name
-          awslogs-region        = local.aws_region
-          awslogs-stream-prefix = "ecs"
-        }
-      }
-      readonlyRootFilesystem = true
-    }
-  ])
 }
 
 
