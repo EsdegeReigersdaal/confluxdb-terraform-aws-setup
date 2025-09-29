@@ -19,6 +19,19 @@ resource "aws_iam_role" "rds_proxy" {
   description        = "IAM role that lets RDS Proxy read database credentials"
 }
 
+resource "aws_iam_role_policy" "rds_proxy_secrets_access" {
+  name = "rds-proxy-secrets-access"
+  role = aws_iam_role.rds_proxy.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect   = "Allow",
+      Action   = ["secretsmanager:GetSecretValue"],
+      Resource = module.rds.db_instance_master_user_secret_arn
+    }]
+  })
+}
+
 resource "aws_db_proxy" "db" {
   name                   = "${local.project_name}-${local.environment}-db-proxy"
   debug_logging          = false
