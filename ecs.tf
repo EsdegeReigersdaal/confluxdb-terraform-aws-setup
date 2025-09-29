@@ -11,22 +11,7 @@ locals {
   ] : []
 
   # Converts Terraform-managed secrets into the ECS secrets format.
-  agent_managed_secret_entries  = [for k, s in aws_secretsmanager_secret.agent_managed : { name = k, valueFrom = s.arn }]
-  worker_managed_secret_entries = [for k, s in aws_secretsmanager_secret.worker_managed : { name = k, valueFrom = s.arn }]
-
-  worker_db_env = {
-    CONFLUXDB_DB_HOST     = aws_db_proxy.db.endpoint
-    CONFLUXDB_DB_PORT     = tostring(module.rds.db_instance_port)
-    CONFLUXDB_DB_NAME     = module.rds.db_instance_name
-    CONFLUXDB_DB_USERNAME = module.rds.db_instance_username
-  }
-
-  worker_db_secret_entries = [
-    {
-      name      = "CONFLUXDB_DB_PASSWORD"
-      valueFrom = "${module.rds.db_instance_master_user_secret_arn}:password::"
-    }
-  ]
+  agent_managed_secret_entries = [for k, s in aws_secretsmanager_secret.agent_managed : { name = k, valueFrom = s.arn }]
 
   # Seeds the agent and workers with shared Dagster Cloud identifiers.
   dagster_base_env = {
@@ -43,18 +28,18 @@ locals {
 
   # Exposes the networking and IAM details the agent needs to launch worker tasks.
   dagster_agent_ecs_env = {
-    DAGSTER_ECS_CLUSTER                = aws_ecs_cluster.cluster.name
-    DAGSTER_ECS_SUBNET_1               = module.vpc.private_subnets[0]
-    DAGSTER_ECS_SUBNET_2               = module.vpc.private_subnets[1]
-    DAGSTER_ECS_SECURITY_GROUP         = module.app_sg.security_group_id
-    DAGSTER_ECS_WORKER_TASK_DEFINITION = aws_ecs_task_definition.worker.family
-    DAGSTER_ECS_EXECUTION_ROLE_ARN     = aws_iam_role.ecs_task_execution_role.arn
-    DAGSTER_ECS_TASK_ROLE_ARN          = aws_iam_role.confluxdb_worker_task_role.arn
-    DAGSTER_ECS_LOG_GROUP              = aws_cloudwatch_log_group.ecs_worker.name
-    DAGSTER_ECS_SD_NAMESPACE_ID        = aws_service_discovery_private_dns_namespace.dagster.id
-    AWS_REGION                         = local.aws_region
-    DAGSTER_CLOUD_AGENT_MEMORY_LIMIT   = tostring(var.dagster_agent_memory)
-    DAGSTER_CLOUD_AGENT_CPU_LIMIT      = tostring(var.dagster_agent_cpu)
+    DAGSTER_ECS_CLUSTER                                   = aws_ecs_cluster.cluster.name
+    DAGSTER_ECS_SUBNET_1                                  = module.vpc.private_subnets[0]
+    DAGSTER_ECS_SUBNET_2                                  = module.vpc.private_subnets[1]
+    DAGSTER_ECS_SECURITY_GROUP                            = module.app_sg.security_group_id
+    DAGSTER_ECS_WORKER_TASK_DEFINITION                    = aws_ecs_task_definition.worker.family
+    DAGSTER_ECS_EXECUTION_ROLE_ARN                        = aws_iam_role.ecs_task_execution_role.arn
+    DAGSTER_ECS_TASK_ROLE_ARN                             = aws_iam_role.confluxdb_worker_task_role.arn
+    DAGSTER_ECS_LOG_GROUP                                 = aws_cloudwatch_log_group.ecs_worker.name
+    DAGSTER_ECS_SD_NAMESPACE_ID                           = aws_service_discovery_private_dns_namespace.dagster.id
+    AWS_REGION                                            = local.aws_region
+    DAGSTER_CLOUD_AGENT_MEMORY_LIMIT                      = tostring(var.dagster_agent_memory)
+    DAGSTER_CLOUD_AGENT_CPU_LIMIT                         = tostring(var.dagster_agent_cpu)
     DAGSTER_CLOUD_ECS_RUN_LAUNCHER__TASK_DEFINITION       = aws_ecs_task_definition.worker.arn
     DAGSTER_CLOUD_ECS_RUN_LAUNCHER__CONTAINER_NAME        = "worker"
     DAGSTER_CLOUD_ECS_USER_CODE_LAUNCHER__TASK_DEFINITION = aws_ecs_task_definition.worker.arn
@@ -71,7 +56,6 @@ locals {
     local.dagster_agent_ecs_env,
     var.dagster_agent_env,
   )
-  worker_env_final = merge(local.dagster_base_env, local.dagster_url_env, local.worker_db_env, var.worker_env)
 
   # Bootstraps dependencies and writes dagster.yaml before the agent starts.
   dagster_agent_startup_command = <<-EOT
@@ -229,13 +213,6 @@ resource "aws_ecs_task_definition" "worker" {
       essential = true
       cpu       = var.worker_cpu
       memory    = var.worker_memory
-
-      environment = [for k, v in local.worker_env_final : { name = k, value = v }]
-      secrets = concat(
-        [for s in var.worker_secrets : { name = s.name, valueFrom = s.value_from }],
-        local.worker_managed_secret_entries,
-        local.worker_db_secret_entries
-      )
 
       logConfiguration = {
         logDriver = "awslogs"

@@ -66,7 +66,7 @@ locals {
   managed_secret_arns        = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? [aws_secretsmanager_secret.dagster_agent_token[0].arn] : []
   agent_managed_secret_arns  = [for k, s in aws_secretsmanager_secret.agent_managed : s.arn]
   worker_managed_secret_arns = [for k, s in aws_secretsmanager_secret.worker_managed : s.arn]
-  worker_db_secret_arns         = [module.rds.db_instance_master_user_secret_arn]
+  worker_db_secret_arns      = [module.rds.db_instance_master_user_secret_arn]
   task_exec_secret_arns = concat(
     local.agent_secret_arns,
     local.worker_secret_arns,
@@ -255,6 +255,21 @@ resource "aws_iam_role_policy" "worker_agent_token_secret_access" {
         Effect   = "Allow",
         Action   = ["secretsmanager:GetSecretValue"],
         Resource = aws_secretsmanager_secret.dagster_agent_token[0].arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "worker_db_credentials_secret_access" {
+  name = "worker-db-credentials-secret-access"
+  role = aws_iam_role.confluxdb_worker_task_role.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = ["secretsmanager:GetSecretValue"],
+        Resource = module.rds.db_instance_master_user_secret_arn
       }
     ]
   })

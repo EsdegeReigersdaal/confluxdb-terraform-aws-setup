@@ -70,12 +70,6 @@ variable "worker_memory" {
   default     = 2048
 }
 
-variable "worker_env" {
-  description = "Environment variables for the worker container"
-  type        = map(string)
-  default     = {}
-}
-
 variable "worker_secrets" {
   description = "Secrets to inject into the worker container"
   type = list(object({

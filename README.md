@@ -88,7 +88,7 @@ Key Variables (excerpt)
 - `dagster_agent_cpu`, `dagster_agent_memory`, `dagster_agent_desired_count`
 - `confluxdb_code_image_tag`, `worker_cpu`, `worker_memory`
 - `dagster_agent_env`, `dagster_agent_secrets`
-- `worker_env`, `worker_secrets`
+- `worker_secrets`
 - `agent_managed_secrets`, `worker_managed_secrets`
 - `worker_task_role_policy_arns`
 
