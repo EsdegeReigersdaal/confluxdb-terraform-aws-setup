@@ -45,7 +45,7 @@ resource "aws_db_proxy" "db" {
   auth {
     auth_scheme = "SECRETS"
     secret_arn  = module.rds.db_instance_master_user_secret_arn
-    iam_auth    = "DISABLED"
+    iam_auth    = "REQUIRED"
   }
 
   tags = {

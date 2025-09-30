@@ -36,6 +36,7 @@ module "rds" {
   master_user_password_rotate_immediately           = false
   master_user_password_rotation_schedule_expression = "rate(15 days)"
 
+  iam_database_authentication_enabled = true
 
   vpc_security_group_ids = [module.rds_sg.security_group_id]
   db_subnet_group_name   = aws_db_subnet_group.rds.name
@@ -65,6 +66,10 @@ module "rds" {
     {
       name  = "client_encoding"
       value = "utf8"
+    },
+    {
+      name  = "rds.force_ssl"
+      value = 1
     }
   ]
 

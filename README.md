@@ -55,7 +55,7 @@ Quick Start
 
    Terraform provisions the secrets required by the platform. After apply:
 
-   - `prod/confluxdb/connection` (environment-specific) already contains the proxy endpoint, database name, username, password, and port consumed by the code worker via `require_postgres_credentials()`. No manual action required.
+   - Database access uses IAM authentication tokens. No static password secret is created or updated by Terraform.
    - If `create_dagster_agent_token_secret` is true and you did not supply `var.dagster_agent_token_value`, populate the agent token secret:
 
         aws secretsmanager put-secret-value \
@@ -77,7 +77,7 @@ Secrets Management
 ------------------
 Terraform keeps the runtime credentials in Secrets Manager:
 
-- `prod/confluxdb/connection` - auto-populated Postgres connection secret consumed by the Dagster code worker and other integrations through the RDS proxy.
+- Database access relies on IAM authentication tokens issued at runtime; no shared password secret is stored in Secrets Manager.
 - `confluxdb/<env>/dagster_agent_token` - optional secret for the Dagster Cloud agent token (populate if you do not pass `var.dagster_agent_token_value`).
 - `confluxdb/<env>/agent/<NAME>` and `confluxdb/<env>/worker/<NAME>` - placeholders created from `agent_managed_secrets` and `worker_managed_secrets`; set the values post-apply when needed.
 

@@ -66,17 +66,13 @@ locals {
   managed_secret_arns        = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? [aws_secretsmanager_secret.dagster_agent_token[0].arn] : []
   agent_managed_secret_arns  = [for k, s in aws_secretsmanager_secret.agent_managed : s.arn]
   worker_managed_secret_arns = [for k, s in aws_secretsmanager_secret.worker_managed : s.arn]
-  worker_db_secret_arns = [
-    module.rds.db_instance_master_user_secret_arn,
-    aws_secretsmanager_secret.db_connection.arn
-  ]
+  db_iam_user_arn = "arn:aws:rds-db:${local.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${module.rds.db_instance_resource_id}/confluxdb_postgresql"
   task_exec_secret_arns = concat(
     local.agent_secret_arns,
     local.worker_secret_arns,
     local.managed_secret_arns,
     local.agent_managed_secret_arns,
-    local.worker_managed_secret_arns,
-    local.worker_db_secret_arns,
+    local.worker_managed_secret_arns
   )
 }
 
@@ -228,6 +224,22 @@ resource "aws_iam_role_policy" "dagster_agent_ecs_control" {
   })
 }
 
+resource "aws_iam_role_policy" "dagster_agent_db_connect" {
+  name = "dagster-agent-db-connect"
+  role = aws_iam_role.dagster_agent_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["rds-db:connect"]
+        Resource = local.db_iam_user_arn
+      }
+    ]
+  })
+}
+
 # Defines the trust policy that allows worker tasks to assume their IAM role.
 data "aws_iam_policy_document" "worker_assume" {
   statement {
@@ -246,6 +258,22 @@ resource "aws_iam_role" "confluxdb_worker_task_role" {
   description        = "Task role for ConfluxDB worker (Dagster/Meltano/SQLMesh)"
 }
 
+resource "aws_iam_role_policy" "worker_db_connect" {
+  name = "worker-db-connect"
+  role = aws_iam_role.confluxdb_worker_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["rds-db:connect"]
+        Resource = local.db_iam_user_arn
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "worker_agent_token_secret_access" {
   count = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? 1 : 0
 
@@ -258,24 +286,6 @@ resource "aws_iam_role_policy" "worker_agent_token_secret_access" {
         Effect   = "Allow",
         Action   = ["secretsmanager:GetSecretValue"],
         Resource = aws_secretsmanager_secret.dagster_agent_token[0].arn
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "worker_db_credentials_secret_access" {
-  name = "worker-db-credentials-secret-access"
-  role = aws_iam_role.confluxdb_worker_task_role.id
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = ["secretsmanager:GetSecretValue"],
-        Resource = [
-          module.rds.db_instance_master_user_secret_arn,
-          aws_secretsmanager_secret.db_connection.arn
-        ]
       }
     ]
   })
