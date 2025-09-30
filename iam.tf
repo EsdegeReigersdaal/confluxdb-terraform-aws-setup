@@ -67,6 +67,14 @@ locals {
   agent_managed_secret_arns  = [for k, s in aws_secretsmanager_secret.agent_managed : s.arn]
   worker_managed_secret_arns = [for k, s in aws_secretsmanager_secret.worker_managed : s.arn]
   db_iam_user_arn            = "arn:aws:rds-db:${local.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${module.rds.db_instance_resource_id}/confluxdb_postgresql"
+  db_proxy_iam_user_arn      = try(
+    "arn:aws:rds-db:${local.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${replace(element(split(".", aws_db_proxy.db.endpoint), 1), "proxy-", "prx-")}/confluxdb_postgresql",
+    null
+  )
+  db_iam_user_arns           = distinct(compact([
+    local.db_iam_user_arn,
+    local.db_proxy_iam_user_arn
+  ]))
   task_exec_secret_arns = concat(
     local.agent_secret_arns,
     local.worker_secret_arns,
@@ -234,7 +242,7 @@ resource "aws_iam_role_policy" "dagster_agent_db_connect" {
       {
         Effect   = "Allow"
         Action   = ["rds-db:connect"]
-        Resource = local.db_iam_user_arn
+        Resource = local.db_iam_user_arns
       }
     ]
   })
@@ -268,7 +276,7 @@ resource "aws_iam_role_policy" "worker_db_connect" {
       {
         Effect   = "Allow"
         Action   = ["rds-db:connect"]
-        Resource = local.db_iam_user_arn
+        Resource = local.db_iam_user_arns
       }
     ]
   })
@@ -334,7 +342,7 @@ resource "aws_iam_role_policy" "jump_host_db_connect" {
       {
         Effect   = "Allow"
         Action   = ["rds-db:connect"]
-        Resource = local.db_iam_user_arn
+        Resource = local.db_iam_user_arns
       }
     ]
   })
