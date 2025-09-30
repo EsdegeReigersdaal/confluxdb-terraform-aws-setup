@@ -67,8 +67,9 @@ locals {
   agent_managed_secret_arns  = [for k, s in aws_secretsmanager_secret.agent_managed : s.arn]
   worker_managed_secret_arns = [for k, s in aws_secretsmanager_secret.worker_managed : s.arn]
   db_iam_user_arn            = "arn:aws:rds-db:${local.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${module.rds.db_instance_resource_id}/confluxdb_postgresql"
+  db_proxy_resource_id       = try(split(":", aws_db_proxy.db.arn)[6], null)
   db_proxy_iam_user_arn      = try(
-    "arn:aws:rds-db:${local.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${replace(element(split(".", aws_db_proxy.db.endpoint), 1), "proxy-", "prx-")}/confluxdb_postgresql",
+    "arn:aws:rds-db:${local.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${local.db_proxy_resource_id}/confluxdb_postgresql",
     null
   )
   db_iam_user_arns           = distinct(compact([
