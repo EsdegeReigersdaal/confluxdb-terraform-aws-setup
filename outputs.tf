@@ -115,3 +115,15 @@ output "db_api_auth_secret_arn" {
   description = "Secrets Manager ARN holding the data API authentication key"
   value       = aws_secretsmanager_secret.db_api_auth.arn
 }
+
+
+output "jump_host_instance_id" {
+  description = "Instance ID of the SSM-managed jump host"
+  value       = aws_instance.jump_host.id
+}
+
+output "jump_host_private_ip" {
+  description = "Private IP address of the jump host"
+  value       = aws_instance.jump_host.private_ip
+}
+

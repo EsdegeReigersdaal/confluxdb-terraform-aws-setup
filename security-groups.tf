@@ -50,6 +50,26 @@ module "app_sg" {
     },
   ]
 }
+# Security group for the SSM-managed jump host instance.
+module "jump_sg" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "5.3.0"
+
+  name        = "${local.project_name}-${local.environment}-jump-sg"
+  description = "Security group for the private jump host"
+  vpc_id      = module.vpc.vpc_id
+
+  egress_with_cidr_blocks = [
+    {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      description = "Allow outbound traffic"
+      cidr_blocks = "0.0.0.0/0"
+    },
+  ]
+}
+
 
 # Enables internal gRPC traffic between the agent service and worker code servers.
 resource "aws_security_group_rule" "app_sg_allow_internal_code_server" {
@@ -105,6 +125,13 @@ module "rds_proxy_sg" {
       protocol                 = "tcp"
       description              = "Allow traffic from the Lambda data API"
       source_security_group_id = module.api_lambda_sg.security_group_id
+    },
+    {
+      from_port                = 5432
+      to_port                  = 5432
+      protocol                 = "tcp"
+      description              = "Allow traffic from the jump host"
+      source_security_group_id = module.jump_sg.security_group_id
     }
   ]
 

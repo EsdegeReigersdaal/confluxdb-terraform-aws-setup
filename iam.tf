@@ -66,7 +66,7 @@ locals {
   managed_secret_arns        = length(aws_secretsmanager_secret.dagster_agent_token) > 0 ? [aws_secretsmanager_secret.dagster_agent_token[0].arn] : []
   agent_managed_secret_arns  = [for k, s in aws_secretsmanager_secret.agent_managed : s.arn]
   worker_managed_secret_arns = [for k, s in aws_secretsmanager_secret.worker_managed : s.arn]
-  db_iam_user_arn = "arn:aws:rds-db:${local.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${module.rds.db_instance_resource_id}/confluxdb_postgresql"
+  db_iam_user_arn            = "arn:aws:rds-db:${local.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${module.rds.db_instance_resource_id}/confluxdb_postgresql"
   task_exec_secret_arns = concat(
     local.agent_secret_arns,
     local.worker_secret_arns,
@@ -296,6 +296,48 @@ resource "aws_iam_role_policy_attachment" "worker_attach" {
   for_each   = { for arn in var.worker_task_role_policy_arns : arn => arn }
   role       = aws_iam_role.confluxdb_worker_task_role.name
   policy_arn = each.value
+}
+
+data "aws_iam_policy_document" "jump_host_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "jump_host" {
+  name               = "${local.project_name}-${local.environment}-jump-role"
+  assume_role_policy = data.aws_iam_policy_document.jump_host_assume.json
+  description        = "SSM-managed jump host role"
+}
+
+resource "aws_iam_instance_profile" "jump_host" {
+  name = "${local.project_name}-${local.environment}-jump-profile"
+  role = aws_iam_role.jump_host.name
+}
+
+resource "aws_iam_role_policy_attachment" "jump_host_ssm" {
+  role       = aws_iam_role.jump_host.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy" "jump_host_db_connect" {
+  name = "jump-host-db-connect"
+  role = aws_iam_role.jump_host.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["rds-db:connect"]
+        Resource = local.db_iam_user_arn
+      }
+    ]
+  })
 }
 
 # Provisions CI roles for the application repositories that publish images and task definitions.

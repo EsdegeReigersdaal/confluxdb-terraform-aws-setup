@@ -84,6 +84,21 @@ Terraform keeps the runtime credentials in Secrets Manager:
 You can still reference existing secrets via `dagster_agent_secrets`. Worker tasks now fetch credentials at runtime; nothing is injected via the ECS task definition.
 
 
+Jump Host
+----------
+Use the SSM-managed EC2 instance (`jump_host_instance_id` output) for ad-hoc database access. Connect via Session Manager or `ssh` with the AWS CLI proxy:
+
+    aws ssm start-session --target <instance-id>
+
+    ssh ec2-user@<instance-id>       -o ProxyCommand="aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=22"
+
+Generate IAM auth tokens from the instance when connecting to PostgreSQL:
+
+    TOKEN=$(aws rds generate-db-auth-token       --hostname <db-proxy-endpoint>       --port 5432       --region eu-west-1       --username confluxdb_postgresql)
+    psql "host=<db-proxy-endpoint> port=5432 user=confluxdb_postgresql sslmode=require password=$TOKEN"
+
+Stop the instance when not in use to avoid unnecessary cost (instance state persists while stopped).
+
 Security Model
 --------------
 - App security group is applied to agent and worker tasks; DB SG only allows ingress from the app SG on port 5432.
