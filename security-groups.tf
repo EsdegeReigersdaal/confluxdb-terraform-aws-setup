@@ -169,6 +169,13 @@ module "rds_sg" {
       protocol                 = "tcp"
       description              = "Allow traffic from the RDS Proxy"
       source_security_group_id = module.rds_proxy_sg.security_group_id
+    },
+    {
+      from_port                = 5432
+      to_port                  = 5432
+      protocol                 = "tcp"
+      description              = "Allow traffic from the jump host"
+      source_security_group_id = module.jump_sg.security_group_id
     }
   ]
 
@@ -176,4 +183,3 @@ module "rds_sg" {
     Name = "${local.project_name}-${local.environment}-rds-sg"
   }
 }
-
